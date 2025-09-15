@@ -94,7 +94,7 @@ def create_sample_users(apps, schema_editor):
             if user_data['role'] == 'doctor':
                 user.specialization = user_data['specialization']
                 user.save()
-            print(f"Created user: {user.username} ({user.get_role_display()})")
+            
 
 
 def reverse_create_sample_users(apps, schema_editor):
@@ -109,7 +109,7 @@ def reverse_create_sample_users(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('users', '0001_initial'),
+        ('users', '0007_auto_20250915_1007'),
     ]
 
     operations = [

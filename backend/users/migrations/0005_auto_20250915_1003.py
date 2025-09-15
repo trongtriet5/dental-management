@@ -46,7 +46,7 @@ def update_sample_users(apps, schema_editor):
                 is_active=user_data['is_active'],
                 password='123456'  # Default password
             )
-            print(f"Created user: {user.username} ({user.get_role_display()})")
+            
 
 
 def reverse_update_sample_users(apps, schema_editor):

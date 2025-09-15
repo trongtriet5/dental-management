@@ -4,18 +4,32 @@ Django settings for dental_clinic project.
 
 from pathlib import Path
 import os
-from decouple import config
+from decouple import config as decouple_config, Config, RepositoryEnv
 
+"""Environment loading
+
+Priority: backend/config.env (if present) > OS env vars
+
+This ensures Supabase settings in config.env are applied without relying on
+external shell scripts to export variables.
+"""
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Prefer a repo-local env file if available; otherwise fall back to OS env
+ENV_FILE = BASE_DIR / 'config.env'
+if ENV_FILE.exists():
+    env = Config(RepositoryEnv(str(ENV_FILE)))
+else:
+    env = decouple_config
+
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = config('SECRET_KEY', default='django-insecure-change-me-in-production')
+SECRET_KEY = env('SECRET_KEY', default='django-insecure-change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+DEBUG = env('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,0.0.0.0').split(',')
+ALLOWED_HOSTS = env('ALLOWED_HOSTS', default='localhost,127.0.0.1,0.0.0.0').split(',')
 
 # Application definition
 INSTALLED_APPS = [
@@ -72,15 +86,15 @@ WSGI_APPLICATION = 'dental_clinic.wsgi.application'
 
 # Database
 # Use Supabase PostgreSQL if configured, otherwise fallback to SQLite
-if config('SUPABASE_DB_URL', default=''):
+if env('SUPABASE_DB_URL', default=''):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('SUPABASE_DB_NAME', default='postgres'),
-            'USER': config('SUPABASE_DB_USER', default='postgres'),
-            'PASSWORD': config('SUPABASE_DB_PASSWORD', default=''),
-            'HOST': config('SUPABASE_DB_HOST', default='localhost'),
-            'PORT': config('SUPABASE_DB_PORT', default='5432'),
+            'NAME': env('SUPABASE_DB_NAME', default='postgres'),
+            'USER': env('SUPABASE_DB_USER', default='postgres'),
+            'PASSWORD': env('SUPABASE_DB_PASSWORD', default=''),
+            'HOST': env('SUPABASE_DB_HOST', default='localhost'),
+            'PORT': env('SUPABASE_DB_PORT', default='5432'),
             'OPTIONS': {
                 'sslmode': 'require',
             },
@@ -155,7 +169,7 @@ REST_FRAMEWORK = {
 }
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000').split(',')
+CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS', default='http://localhost:3000,http://127.0.0.1:3000').split(',')
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -169,8 +183,8 @@ SIMPLE_JWT = {
 }
 
 # Firebase settings
-FIREBASE_CREDENTIALS_PATH = config('FIREBASE_CREDENTIALS_PATH', default='')
-FIREBASE_DATABASE_URL = config('FIREBASE_DATABASE_URL', default='')
+FIREBASE_CREDENTIALS_PATH = env('FIREBASE_CREDENTIALS_PATH', default='')
+FIREBASE_DATABASE_URL = env('FIREBASE_DATABASE_URL', default='')
 
 # Custom user model
 AUTH_USER_MODEL = 'users.User'

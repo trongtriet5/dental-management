@@ -59,7 +59,11 @@ class CustomerSerializer(serializers.ModelSerializer):
         if 'province' in data and data['province']:
             try:
                 from locations.models import Province
-                province = Province.objects.get(code=data['province'])
+                # Normalize province code: handle values like '1' -> '01'
+                prov_code = str(data['province']).strip()
+                if prov_code.isdigit() and len(prov_code) == 1:
+                    prov_code = prov_code.zfill(2)
+                province = Province.objects.get(code=prov_code)
                 data['province'] = province.pk
             except:
                 data['province'] = None
@@ -67,11 +71,13 @@ class CustomerSerializer(serializers.ModelSerializer):
         if 'ward' in data and data['ward']:
             try:
                 from locations.models import Ward
-                ward = Ward.objects.get(code=data['ward'])
+                # Normalize ward code (defensive strip only; keep exact if given)
+                ward_code = str(data['ward']).strip()
+                ward = Ward.objects.get(code=ward_code)
                 data['ward'] = ward.pk
             except:
                 data['ward'] = None
-        
+
         return super().to_internal_value(data)
 
     def to_representation(self, instance):

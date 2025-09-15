@@ -17,5 +17,9 @@ class WardListView(generics.ListAPIView):
     def get_queryset(self):
         province_code = self.request.query_params.get('province_code')
         if province_code:
-            return Ward.objects.filter(province__code=province_code)
+            code = str(province_code).strip()
+            # Normalize '1' -> '01' for province codes
+            if code.isdigit() and len(code) == 1:
+                code = code.zfill(2)
+            return Ward.objects.filter(province__code=code)
         return Ward.objects.all()
