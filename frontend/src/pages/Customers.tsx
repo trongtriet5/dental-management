@@ -1094,16 +1094,18 @@ const Customers: React.FC = (): JSX.Element => {
               <Form.Group>
                 <Form.Label className="fw-semibold text-primary">Ngày hẹn</Form.Label>
                 <div className="d-flex gap-2">
-                  <DatePicker
-                    value={appointmentDateRange.start}
-                    onChange={(value) => setAppointmentDateRange({...appointmentDateRange, start: value})}
+                  <Form.Control
+                    type="date"
                     placeholder="Từ ngày"
+                    value={appointmentDateRange.start}
+                    onChange={(e) => setAppointmentDateRange({...appointmentDateRange, start: e.target.value})}
                     className="flex-fill"
                   />
-                  <DatePicker
-                    value={appointmentDateRange.end}
-                    onChange={(value) => setAppointmentDateRange({...appointmentDateRange, end: value})}
+                  <Form.Control
+                    type="date"
                     placeholder="Đến ngày"
+                    value={appointmentDateRange.end}
+                    onChange={(e) => setAppointmentDateRange({...appointmentDateRange, end: e.target.value})}
                     className="flex-fill"
                   />
                 </div>

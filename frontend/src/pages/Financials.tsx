@@ -16,7 +16,9 @@ import {
   Tab, 
   InputGroup,
   FormControl,
-  FormSelect
+  FormSelect,
+  OverlayTrigger,
+  Tooltip
 } from 'react-bootstrap';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
@@ -555,36 +557,108 @@ const Financials: React.FC = () => {
       {/* Financial Summary */}
       {financialSummary && (
         <Row className="mb-4">
-          <Col xs={12} sm={6} md={4} className="mb-3">
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
             <Card className="card-enhanced h-100">
-              <Card.Body className="text-center">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="total-customers-tooltip">
+                      Tổng khách hàng trong tháng này
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
+                <div className="text-primary mb-2">
+                  <i className="bi bi-people fs-1"></i>
+                </div>
+                <h4 className="mb-1">{financialSummary.total_customers ?? 0}</h4>
+                <p className="text-muted mb-0">Tổng khách hàng</p>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
+            <Card className="card-enhanced h-100">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="today-appointments-tooltip">
+                      Tổng số lịch hẹn trong ngày hôm nay
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
+                <div className="text-info mb-2">
+                  <i className="bi bi-calendar-check fs-1"></i>
+                </div>
+                <h4 className="mb-1">{financialSummary.today_appointments ?? 0}</h4>
+                <p className="text-muted mb-0">Lịch hẹn hôm nay</p>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
+            <Card className="card-enhanced h-100">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="monthly-revenue-tooltip">
+                      Số tiền khách hàng đã thanh toán trong tháng này
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
                 <div className="text-success mb-2">
                   <i className="bi bi-graph-up fs-1"></i>
                 </div>
                 <h4 className="mb-1">{formatCurrency(financialSummary.total_revenue)}</h4>
-                <p className="text-muted mb-0">Tổng doanh thu</p>
+                <p className="text-muted mb-0">Doanh thu tháng</p>
               </Card.Body>
             </Card>
           </Col>
-          <Col xs={12} sm={6} md={4} className="mb-3">
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
             <Card className="card-enhanced h-100">
-              <Card.Body className="text-center">
-                <div className="text-danger mb-2">
-                  <i className="bi bi-graph-down fs-1"></i>
-                </div>
-                <h4 className="mb-1">{formatCurrency(financialSummary.total_expenses)}</h4>
-                <p className="text-muted mb-0">Tổng chi phí</p>
-              </Card.Body>
-            </Card>
-          </Col>
-          <Col xs={12} sm={6} md={4} className="mb-3">
-            <Card className="card-enhanced h-100">
-              <Card.Body className="text-center">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="pending-revenue-tooltip">
+                      Số tiền khách hàng chưa thanh toán trong tháng này
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
                 <div className="text-warning mb-2">
                   <i className="bi bi-clock-history fs-1"></i>
                 </div>
                 <h4 className="mb-1">{formatCurrency(financialSummary.pending_payments)}</h4>
-                <p className="text-muted mb-0">Chờ thanh toán</p>
+                <p className="text-muted mb-0">Doanh thu chờ</p>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
+            <Card className="card-enhanced h-100">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="expenses-tooltip">
+                      Tổng chi phí trong tháng này
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
+                <div className="text-danger mb-2">
+                  <i className="bi bi-graph-down fs-1"></i>
+                </div>
+                <h4 className="mb-1">{formatCurrency(financialSummary.total_expenses)}</h4>
+                <p className="text-muted mb-0">Chi phí</p>
               </Card.Body>
             </Card>
           </Col>

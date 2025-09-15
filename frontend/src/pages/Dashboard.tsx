@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Spinner, Alert } from 'react-bootstrap';
+import { Container, Row, Col, Card, Spinner, Alert, OverlayTrigger, Tooltip } from 'react-bootstrap';
 import { useAuth } from '../services/AuthContext';
 import api from '../services/api';
 import { formatCurrency } from '../utils/currency';
@@ -20,6 +20,14 @@ const Dashboard: React.FC = () => {
         setLoading(true);
         setError(null);
 
+        // Get current month date range for financial summary
+        const now = new Date();
+        const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        
+        const startDate = firstDayOfMonth.toISOString().split('T')[0]; // YYYY-MM-DD
+        const endDate = lastDayOfMonth.toISOString().split('T')[0]; // YYYY-MM-DD
+
         // Fetch all dashboard data in parallel
         const [
           statsResponse,
@@ -28,7 +36,7 @@ const Dashboard: React.FC = () => {
           upcomingResponse
         ] = await Promise.allSettled([
           api.getDashboardStats(),
-          api.getFinancialSummary(),
+          api.getFinancialSummary(startDate, endDate),
           api.getTodayAppointments(),
           api.getUpcomingAppointments()
         ]);
@@ -65,7 +73,11 @@ const Dashboard: React.FC = () => {
   }, []);
 
   const getGreeting = () => {
-    const hour = new Date().getHours();
+    // Get current time in Vietnam timezone (UTC+7)
+    const now = new Date();
+    const vietnamTime = new Date(now.getTime() + (7 * 60 * 60 * 1000)); // UTC+7
+    const hour = vietnamTime.getHours();
+    
     if (hour < 12) return 'Chào buổi sáng';
     if (hour < 18) return 'Chào buổi chiều';
     return 'Chào buổi tối';
@@ -113,9 +125,19 @@ const Dashboard: React.FC = () => {
 
       {/* Quick Stats */}
       <Row className="mb-4">
-        <Col md={3} className="mb-3">
+        <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
           <Card className="h-100 border-0 shadow-sm">
-            <Card.Body className="text-center">
+            <Card.Body className="text-center position-relative">
+              <OverlayTrigger
+                placement="top"
+                overlay={
+                  <Tooltip id="total-customers-tooltip">
+                    Tổng khách hàng trong tháng này
+                  </Tooltip>
+                }
+              >
+                <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+              </OverlayTrigger>
               <div className="text-primary mb-2">
                 <i className="bi bi-people fs-1"></i>
               </div>
@@ -124,36 +146,87 @@ const Dashboard: React.FC = () => {
             </Card.Body>
           </Card>
         </Col>
-        <Col md={3} className="mb-3">
+        <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
           <Card className="h-100 border-0 shadow-sm">
-            <Card.Body className="text-center">
-              <div className="text-success mb-2">
+            <Card.Body className="text-center position-relative">
+              <OverlayTrigger
+                placement="top"
+                overlay={
+                  <Tooltip id="today-appointments-tooltip">
+                    Tổng số lịch hẹn trong ngày hôm nay
+                  </Tooltip>
+                }
+              >
+                <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+              </OverlayTrigger>
+              <div className="text-info mb-2">
                 <i className="bi bi-calendar-check fs-1"></i>
               </div>
-              <h4 className="text-success mb-1">{stats?.today_appointments || 0}</h4>
+              <h4 className="text-info mb-1">{todayAppointments.length}</h4>
               <p className="text-muted mb-0">Lịch hẹn hôm nay</p>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={3} className="mb-3">
+        <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
           <Card className="h-100 border-0 shadow-sm">
-            <Card.Body className="text-center">
-              <div className="text-warning mb-2">
-                <i className="bi bi-cash-stack fs-1"></i>
+            <Card.Body className="text-center position-relative">
+              <OverlayTrigger
+                placement="top"
+                overlay={
+                  <Tooltip id="monthly-revenue-tooltip">
+                    Số tiền khách hàng đã thanh toán trong tháng này
+                  </Tooltip>
+                }
+              >
+                <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+              </OverlayTrigger>
+              <div className="text-success mb-2">
+                <i className="bi bi-graph-up fs-1"></i>
               </div>
-              <h4 className="text-warning mb-1">{formatCurrency(stats?.this_month_revenue || 0)}</h4>
+              <h4 className="text-success mb-1">{formatCurrency(financialSummary?.total_revenue || 0)}</h4>
               <p className="text-muted mb-0">Doanh thu tháng</p>
             </Card.Body>
           </Card>
         </Col>
-        <Col md={3} className="mb-3">
+        <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
           <Card className="h-100 border-0 shadow-sm">
-            <Card.Body className="text-center">
-              <div className="text-info mb-2">
+            <Card.Body className="text-center position-relative">
+              <OverlayTrigger
+                placement="top"
+                overlay={
+                  <Tooltip id="pending-revenue-tooltip">
+                    Số tiền khách hàng chưa thanh toán trong tháng này
+                  </Tooltip>
+                }
+              >
+                <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+              </OverlayTrigger>
+              <div className="text-warning mb-2">
                 <i className="bi bi-clock-history fs-1"></i>
               </div>
-              <h4 className="text-info mb-1">{stats?.pending_payments || 0}</h4>
-              <p className="text-muted mb-0">Thanh toán chờ</p>
+              <h4 className="text-warning mb-1">{formatCurrency(financialSummary?.pending_payments || 0)}</h4>
+              <p className="text-muted mb-0">Doanh thu chờ</p>
+            </Card.Body>
+          </Card>
+        </Col>
+        <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
+          <Card className="h-100 border-0 shadow-sm">
+            <Card.Body className="text-center position-relative">
+              <OverlayTrigger
+                placement="top"
+                overlay={
+                  <Tooltip id="expenses-tooltip">
+                    Tổng chi phí trong tháng này
+                  </Tooltip>
+                }
+              >
+                <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+              </OverlayTrigger>
+              <div className="text-danger mb-2">
+                <i className="bi bi-graph-down fs-1"></i>
+              </div>
+              <h4 className="text-danger mb-1">{formatCurrency(financialSummary?.total_expenses || 0)}</h4>
+              <p className="text-muted mb-0">Chi phí</p>
             </Card.Body>
           </Card>
         </Col>

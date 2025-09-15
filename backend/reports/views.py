@@ -141,11 +141,41 @@ def generate_revenue_report(filters, group_by):
     payments = Payment.objects.filter(filters)
     
     if group_by == 'service':
-        data = payments.values('service__name').annotate(
-            total_amount=Sum('amount'),
-            paid_amount=Sum('paid_amount'),
-            count=Count('id')
-        ).order_by('-total_amount')
+        # Sửa logic để tính chính xác theo từng service
+        from customers.models import Service
+        services = Service.objects.all()
+        data = []
+        
+        for service in services:
+            payments_with_service = payments.filter(services=service).prefetch_related('services')
+            
+            total_service_amount = 0
+            paid_service_amount = 0
+            
+            for payment in payments_with_service:
+                # Tính tỷ lệ của service này trong payment dựa trên giá của từng service
+                payment_services = payment.services.all()
+                total_service_price = sum(s.price for s in payment_services)
+                
+                if total_service_price > 0:
+                    # Tính tỷ lệ của service này trong payment
+                    service_ratio = service.price / total_service_price
+                    
+                    # Tính số tiền tương ứng với service này
+                    service_amount = payment.amount * service_ratio
+                    service_paid_amount = payment.paid_amount * service_ratio
+                    
+                    total_service_amount += service_amount
+                    paid_service_amount += service_paid_amount
+            
+            data.append({
+                'service__name': service.name,
+                'total_amount': total_service_amount,
+                'paid_amount': paid_service_amount,
+                'count': payments_with_service.count()
+            })
+        
+        data.sort(key=lambda x: x['total_amount'], reverse=True)
     elif group_by == 'branch':
         data = payments.values('branch__name').annotate(
             total_amount=Sum('amount'),
@@ -225,19 +255,39 @@ def generate_customer_report(filters, group_by):
 
 def generate_service_report(filters, group_by):
     """Generate service report"""
-    # This would need to be adapted based on how services are tracked
+    from customers.models import Service
     services = Service.objects.all()
     data = []
     
     for service in services:
-        appointments = Appointment.objects.filter(service=service, **filters)
-        payments = Payment.objects.filter(service=service, **filters)
+        # Sửa logic để tính chính xác theo từng service
+        appointments = Appointment.objects.filter(services=service, **filters)
+        payments_with_service = Payment.objects.filter(services=service, **filters).prefetch_related('services')
+        
+        total_service_amount = 0
+        paid_service_amount = 0
+        
+        for payment in payments_with_service:
+            # Tính tỷ lệ của service này trong payment dựa trên giá của từng service
+            payment_services = payment.services.all()
+            total_service_price = sum(s.price for s in payment_services)
+            
+            if total_service_price > 0:
+                # Tính tỷ lệ của service này trong payment
+                service_ratio = service.price / total_service_price
+                
+                # Tính số tiền tương ứng với service này
+                service_amount = payment.amount * service_ratio
+                service_paid_amount = payment.paid_amount * service_ratio
+                
+                total_service_amount += service_amount
+                paid_service_amount += service_paid_amount
         
         data.append({
             'service_name': service.name,
             'appointment_count': appointments.count(),
-            'total_revenue': payments.aggregate(total=Sum('amount'))['total'] or 0,
-            'paid_revenue': payments.aggregate(total=Sum('paid_amount'))['total'] or 0
+            'total_revenue': total_service_amount,
+            'paid_revenue': paid_service_amount
         })
     
     return data

@@ -4,7 +4,6 @@ import api from '../services/api';
 import { Appointment, Customer, Service, Branch, User, AppointmentFormData } from '../types';
 import TimePicker from '../components/TimePicker';
 import DatePicker from '../components/DatePicker';
-import DateRangePicker from '../components/DateRangePicker';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../utils/date';
 import { formatTime, formatDate } from '../utils/time';
 
@@ -471,14 +470,22 @@ const Appointments: React.FC = () => {
               <Col md={6}>
                 <Form.Group>
                   <Form.Label className="fw-semibold text-primary">Khoảng thời gian</Form.Label>
-                  <DateRangePicker
-                    startDate={startDate}
-                    endDate={endDate}
-                    onStartDateChange={setStartDate}
-                    onEndDateChange={setEndDate}
-                    placeholder="Chọn khoảng thời gian"
-                    className="enhanced-form"
-                  />
+                  <div className="d-flex gap-2">
+                    <Form.Control
+                      type="date"
+                      placeholder="Từ ngày"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="flex-fill"
+                    />
+                    <Form.Control
+                      type="date"
+                      placeholder="Đến ngày"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="flex-fill"
+                    />
+                  </div>
                 </Form.Group>
               </Col>
             )}

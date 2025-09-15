@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Form } from 'react-bootstrap';
-import { formatDateForInput, formatDateForDisplay } from '../utils/date';
 
 interface DatePickerProps {
   value: string;
@@ -160,18 +159,27 @@ const DatePicker: React.FC<DatePickerProps> = ({
           {required && <span className="text-danger ms-1">*</span>}
         </Form.Label>
       )}
-      <Form.Control
-        type="text"
-        value={displayValue}
-        onChange={handleInputChange}
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        className={`enhanced-form ${className} ${!isValid ? 'is-invalid' : ''}`}
-        isInvalid={isInvalid || !isValid}
-        disabled={disabled}
-        maxLength={10}
-      />
+      <div className="position-relative">
+        <Form.Control
+          type="text"
+          value={displayValue}
+          onChange={handleInputChange}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className={`enhanced-form ${className} ${!isValid ? 'is-invalid' : ''}`}
+          isInvalid={isInvalid || !isValid}
+          disabled={disabled}
+          maxLength={10}
+          style={{ paddingRight: '40px' }}
+        />
+        <div 
+          className="position-absolute top-50 end-0 translate-middle-y me-3"
+          style={{ pointerEvents: 'none' }}
+        >
+          <i className="bi bi-calendar3 text-muted"></i>
+        </div>
+      </div>
       {!isValid && displayValue && (
         <Form.Control.Feedback type="invalid">
           Vui lòng nhập đúng định dạng dd/mm/yyyy

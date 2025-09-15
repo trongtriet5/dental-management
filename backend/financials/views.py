@@ -2,7 +2,7 @@ from rest_framework import generics, status, permissions, filters
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Sum, Q, F, DecimalField, Value
+from django.db.models import Sum, Q, F, DecimalField, Value, Count
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import datetime, date, timedelta
@@ -150,11 +150,14 @@ def financial_summary(request):
             Q(payment_date__range=[start_date, end_date]) |
             (Q(payment_date__isnull=True) & Q(created_at__date__range=[start_date, end_date]))
         )
-    paid_payments = payments_qs.aggregate(
+    
+    # Total revenue = actual paid amount (cash-based accounting)
+    total_revenue = payments_qs.aggregate(
         total=Coalesce(Sum('paid_amount'), Value(0, output_field=DecimalField()))
     )['total'] or 0
+    
     # Total quoted amount (orders) in period for context
-    total_revenue = payments_qs.aggregate(
+    total_quoted_amount = payments_qs.aggregate(
         total=Coalesce(Sum('amount'), Value(0, output_field=DecimalField()))
     )['total'] or 0
     # Pending equals sum of remaining_amount for pending/partial in period
@@ -172,13 +175,26 @@ def financial_summary(request):
         expenses_qs = expenses_qs.filter(expense_date__range=[start_date, end_date])
     total_expenses = expenses_qs.aggregate(total=Coalesce(Sum('amount'), Value(0, output_field=DecimalField())))['total'] or 0
     
+    # Additional stats for dashboard
+    from customers.models import Customer
+    from appointments.models import Appointment
+    
+    # Total customers (all time)
+    total_customers = Customer.objects.count()
+    
+    # Today's appointments
+    today = timezone.now().date()
+    today_appointments = Appointment.objects.filter(appointment_date=today).count()
+    
     summary = {
         'total_revenue': total_revenue,
         'total_expenses': total_expenses,
         'pending_payments': pending_payments,
-        'paid_payments': paid_payments,
+        'total_quoted_amount': total_quoted_amount,
         'period_start': start_date,
-        'period_end': end_date
+        'period_end': end_date,
+        'total_customers': total_customers,
+        'today_appointments': today_appointments
     }
     
     serializer = FinancialSummarySerializer(summary)
@@ -208,25 +224,98 @@ def revenue_by_service(request):
     revenue_data = []
     
     for service in services:
-        total_amount = Payment.objects.filter(
-            service=service,
+        # Lấy tất cả payments có chứa service này trong khoảng thời gian
+        payments_with_service = Payment.objects.filter(
+            services=service,
             created_at__date__range=[start_date, end_date]
-        ).aggregate(total=Sum('amount'))['total'] or 0
+        ).prefetch_related('services')
         
-        paid_amount = Payment.objects.filter(
-            service=service,
-            created_at__date__range=[start_date, end_date],
-            status='paid'
-        ).aggregate(total=Sum('paid_amount'))['total'] or 0
+        total_service_amount = 0
+        paid_service_amount = 0
+        
+        for payment in payments_with_service:
+            # Tính tỷ lệ của service này trong payment dựa trên giá của từng service
+            payment_services = payment.services.all()
+            total_service_price = sum(s.price for s in payment_services)
+            
+            if total_service_price > 0:
+                # Tính tỷ lệ của service này trong payment
+                service_ratio = service.price / total_service_price
+                
+                # Tính số tiền tương ứng với service này
+                service_amount = payment.amount * service_ratio
+                service_paid_amount = payment.paid_amount * service_ratio
+                
+                total_service_amount += service_amount
+                paid_service_amount += service_paid_amount
         
         revenue_data.append({
             'service_name': service.name,
-            'total_amount': total_amount,
-            'paid_amount': paid_amount,
-            'pending_amount': total_amount - paid_amount
+            'total_amount': total_service_amount,
+            'paid_amount': paid_service_amount,
+            'pending_amount': total_service_amount - paid_service_amount
         })
     
     return Response(revenue_data)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def weekly_appointments(request):
+    """Get appointments for current week"""
+    from appointments.models import Appointment
+    
+    today = timezone.now().date()
+    # Get start of current week (Monday)
+    start_of_week = today - timedelta(days=today.weekday())
+    # Get end of current week (Sunday)
+    end_of_week = start_of_week + timedelta(days=6)
+    
+    appointments = Appointment.objects.filter(
+        appointment_date__range=[start_of_week, end_of_week]
+    ).values('appointment_date').annotate(
+        total_appointments=Count('id'),
+        completed_appointments=Count('id', filter=Q(status='completed'))
+    ).order_by('appointment_date')
+    
+    # Create data for all 7 days of the week
+    week_data = []
+    for i in range(7):
+        current_date = start_of_week + timedelta(days=i)
+        day_name = current_date.strftime('%a')  # Mon, Tue, Wed, etc.
+        
+        # Find appointments for this day
+        day_appointments = appointments.filter(appointment_date=current_date).first()
+        
+        week_data.append({
+            'date': day_name,
+            'appointments': day_appointments['total_appointments'] if day_appointments else 0,
+            'completed': day_appointments['completed_appointments'] if day_appointments else 0,
+        })
+    
+    return Response(week_data)
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def service_distribution(request):
+    """Get service distribution (count of services used)"""
+    from customers.models import Service
+    
+    services = Service.objects.all()
+    distribution_data = []
+    
+    for service in services:
+        # Count how many times this service was used in payments
+        usage_count = Payment.objects.filter(services=service).count()
+        
+        distribution_data.append({
+            'service_name': service.name,
+            'usage_count': usage_count,
+            'service_id': service.id
+        })
+    
+    return Response(distribution_data)
 
 
 @api_view(['GET'])

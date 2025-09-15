@@ -475,6 +475,16 @@ class ApiService {
     return response.data;
   }
 
+  async getWeeklyAppointments(): Promise<any[]> {
+    const response: AxiosResponse<any[]> = await this.api.get('/financials/weekly-appointments/');
+    return response.data;
+  }
+
+  async getServiceDistribution(): Promise<any[]> {
+    const response: AxiosResponse<any[]> = await this.api.get('/financials/service-distribution/');
+    return response.data;
+  }
+
   async generateReport(reportData: Record<string, any>): Promise<GeneratedReport> {
     const response: AxiosResponse<GeneratedReport> = await this.api.post('/reports/generate/', reportData);
     return response.data;

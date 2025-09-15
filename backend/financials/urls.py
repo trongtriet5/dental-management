@@ -19,6 +19,8 @@ urlpatterns = [
     # Reports
     path('summary/', views.financial_summary, name='financial-summary'),
     path('revenue-by-service/', views.revenue_by_service, name='revenue-by-service'),
+    path('weekly-appointments/', views.weekly_appointments, name='weekly-appointments'),
+    path('service-distribution/', views.service_distribution, name='service-distribution'),
     path('stats/', views.financial_stats, name='financial-stats'),
     
     # Utilities

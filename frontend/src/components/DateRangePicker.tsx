@@ -118,7 +118,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
         <span className={startDate || endDate ? 'text-dark' : 'text-muted'}>
           {formatDisplayValue()}
         </span>
-        <i className={`fas fa-calendar-alt ms-2 ${isOpen ? 'text-primary' : 'text-muted'}`}></i>
+        <i className={`bi bi-calendar3 ms-2 ${isOpen ? 'text-primary' : 'text-muted'}`}></i>
       </button>
 
       {isOpen && (
@@ -126,39 +126,57 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
           <div className="row">
             <div className="col-6">
               <label className="form-label fw-bold text-primary">
-                <i className="fas fa-calendar-day me-1"></i>
+                <i className="bi bi-calendar3 me-1"></i>
                 Từ ngày
               </label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="DD/MM/YYYY"
-                value={tempStartDate}
-                onChange={(e) => handleStartDateChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleApply();
-                  }
-                }}
-              />
+              <div className="position-relative">
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="dd/mm/yyyy"
+                  value={tempStartDate}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleApply();
+                    }
+                  }}
+                  style={{ paddingRight: '40px' }}
+                />
+                <div 
+                  className="position-absolute top-50 end-0 translate-middle-y me-3"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <i className="bi bi-calendar3 text-muted"></i>
+                </div>
+              </div>
             </div>
             <div className="col-6">
               <label className="form-label fw-bold text-primary">
-                <i className="fas fa-calendar-day me-1"></i>
+                <i className="bi bi-calendar3 me-1"></i>
                 Đến ngày
               </label>
-              <input
-                type="text"
-                className="form-control"
-                placeholder="DD/MM/YYYY"
-                value={tempEndDate}
-                onChange={(e) => handleEndDateChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleApply();
-                  }
-                }}
-              />
+              <div className="position-relative">
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="dd/mm/yyyy"
+                  value={tempEndDate}
+                  onChange={(e) => handleEndDateChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleApply();
+                    }
+                  }}
+                  style={{ paddingRight: '40px' }}
+                />
+                <div 
+                  className="position-absolute top-50 end-0 translate-middle-y me-3"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <i className="bi bi-calendar3 text-muted"></i>
+                </div>
+              </div>
             </div>
           </div>
           
@@ -168,7 +186,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
               className="btn btn-outline-danger btn-sm"
               onClick={handleClear}
             >
-              <i className="fas fa-times me-1"></i>
+              <i className="bi bi-x-lg me-1"></i>
               Xóa
             </button>
             <div>
@@ -184,7 +202,7 @@ const DateRangePicker: React.FC<DateRangePickerProps> = ({
                 className="btn btn-primary btn-sm"
                 onClick={handleApply}
               >
-                <i className="fas fa-check me-1"></i>
+                <i className="bi bi-check-lg me-1"></i>
                 Áp dụng
               </button>
             </div>

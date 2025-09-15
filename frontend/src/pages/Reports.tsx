@@ -12,7 +12,9 @@ import {
   FormControl,
   FormSelect,
   Table,
-  Badge
+  Badge,
+  OverlayTrigger,
+  Tooltip
 } from 'react-bootstrap';
 import {
   LineChart,
@@ -20,7 +22,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as ChartTooltip,
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -33,20 +35,21 @@ import 'dayjs/locale/vi';
 import api from '../services/api';
 import { FinancialSummary, DashboardStats } from '../types';
 import DatePicker from '../components/DatePicker';
-import DateRangePicker from '../components/DateRangePicker';
 import { formatCurrency } from '../utils/currency';
 
+// Chart colors for pie chart
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
 
 const Reports: React.FC = () => {
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [revenueByService, setRevenueByService] = useState<any[]>([]);
+  const [weeklyAppointments, setWeeklyAppointments] = useState<any[]>([]);
+  const [serviceDistribution, setServiceDistribution] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>('');
-  const [startDate, setStartDate] = useState(dayjs().subtract(30, 'day'));
-  const [endDate, setEndDate] = useState(dayjs());
-  const [selectedReport, setSelectedReport] = useState('overview');
+  const [startDate, setStartDate] = useState(dayjs().subtract(30, 'day').format('YYYY-MM-DD'));
+  const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'));
 
   useEffect(() => {
     fetchReportData();
@@ -54,21 +57,25 @@ const Reports: React.FC = () => {
 
   const fetchReportData = async () => {
     try {
-      const [summaryData, revenueData] = await Promise.all([
-        api.getFinancialSummary(startDate.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD')),
-        api.getRevenueByService(startDate.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD')),
+      const [summaryData, revenueData, weeklyData, distributionData] = await Promise.all([
+        api.getFinancialSummary(startDate, endDate),
+        api.getRevenueByService(startDate, endDate),
+        api.getWeeklyAppointments(),
+        api.getServiceDistribution(),
       ]);
       setFinancialSummary(summaryData);
       setRevenueByService(revenueData);
+      setWeeklyAppointments(weeklyData);
+      setServiceDistribution(distributionData);
       
       // Tạo mock data cho dashboard stats thay vì gọi API
       setDashboardStats({
-        total_customers: 0,
+        total_customers: summaryData.total_customers || 0,
         total_appointments: 0,
-        today_appointments: 0,
+        today_appointments: summaryData.today_appointments || 0,
         this_month_revenue: summaryData.total_revenue || 0,
         this_month_expenses: summaryData.total_expenses || 0,
-        pending_payments: 0,
+        pending_payments: summaryData.pending_payments || 0,
       });
     } catch (err: any) {
       console.error('Error fetching report data:', err);
@@ -101,29 +108,19 @@ const Reports: React.FC = () => {
   };
 
   const getRevenueChartData = () => {
-    const data = [];
-    for (let i = 0; i < 30; i++) {
-      const date = dayjs().subtract(29 - i, 'day');
-      data.push({
-        date: date.format('DD/MM'),
-        revenue: Math.floor(Math.random() * 1000000) + 500000,
-        expenses: Math.floor(Math.random() * 500000) + 200000,
-      });
-    }
-    return data;
+    // Use actual financial summary data
+    if (!financialSummary) return [];
+    
+    return [{
+      date: 'Tổng',
+      revenue: financialSummary.total_revenue,
+      expenses: financialSummary.total_expenses,
+    }];
   };
 
   const getAppointmentChartData = () => {
-    const data = [];
-    for (let i = 0; i < 7; i++) {
-      const date = dayjs().subtract(6 - i, 'day');
-      data.push({
-        date: date.format('ddd'),
-        appointments: Math.floor(Math.random() * 20) + 5,
-        completed: Math.floor(Math.random() * 15) + 3,
-      });
-    }
-    return data;
+    // Use actual weekly appointments data
+    return weeklyAppointments || [];
   };
 
   if (isLoading) {
@@ -175,43 +172,26 @@ const Reports: React.FC = () => {
           <Row className="g-3">
             <Col xs={12} sm={6}>
               <Form.Group>
-                <Form.Label>Khoảng thời gian</Form.Label>
-                <DateRangePicker
-                  startDate={startDate.format('DD/MM/YYYY')}
-                  endDate={endDate.format('DD/MM/YYYY')}
-                  onStartDateChange={(value) => {
-                    if (value) {
-                      // Convert DD/MM/YYYY to dayjs object
-                      const [day, month, year] = value.split('/');
-                      setStartDate(dayjs(`${year}-${month}-${day}`));
-                    }
-                  }}
-                  onEndDateChange={(value) => {
-                    if (value) {
-                      // Convert DD/MM/YYYY to dayjs object
-                      const [day, month, year] = value.split('/');
-                      setEndDate(dayjs(`${year}-${month}-${day}`));
-                    }
-                  }}
-                  placeholder="Chọn khoảng thời gian"
-                />
+                <Form.Label className="fw-semibold text-primary">Khoảng thời gian</Form.Label>
+                <div className="d-flex gap-2">
+                  <Form.Control
+                    type="date"
+                    placeholder="Từ ngày"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="flex-fill"
+                  />
+                  <Form.Control
+                    type="date"
+                    placeholder="Đến ngày"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="flex-fill"
+                  />
+                </div>
               </Form.Group>
             </Col>
-            <Col xs={12} sm={3}>
-              <Form.Group>
-                <Form.Label>Loại báo cáo</Form.Label>
-                <FormSelect
-                  value={selectedReport}
-                  onChange={(e) => setSelectedReport(e.target.value)}
-                >
-                  <option value="overview">Tổng quan</option>
-                  <option value="revenue">Doanh thu</option>
-                  <option value="appointments">Lịch hẹn</option>
-                  <option value="customers">Khách hàng</option>
-                </FormSelect>
-              </Form.Group>
-            </Col>
-            <Col xs={12} sm={3}>
+            <Col xs={12} sm={6}>
               <Form.Group>
                 <Form.Label>&nbsp;</Form.Label>
                 <Button variant="primary" onClick={handleDateRangeChange} className="w-100">
@@ -226,47 +206,108 @@ const Reports: React.FC = () => {
       {/* Overview Cards */}
       {financialSummary && (
         <Row className="mb-4">
-          <Col xs={12} sm={6} md={3} className="mb-3">
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
             <Card className="card-enhanced h-100">
-              <Card.Body className="text-center">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="total-customers-tooltip">
+                      Tổng khách hàng trong tháng này
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
+                <div className="text-primary mb-2">
+                  <i className="bi bi-people fs-1"></i>
+                </div>
+                <h4 className="mb-1">{financialSummary.total_customers ?? 0}</h4>
+                <p className="text-muted mb-0">Tổng khách hàng</p>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
+            <Card className="card-enhanced h-100">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="today-appointments-tooltip">
+                      Tổng số lịch hẹn trong ngày hôm nay
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
+                <div className="text-info mb-2">
+                  <i className="bi bi-calendar-check fs-1"></i>
+                </div>
+                <h4 className="mb-1">{financialSummary.today_appointments ?? 0}</h4>
+                <p className="text-muted mb-0">Lịch hẹn hôm nay</p>
+              </Card.Body>
+            </Card>
+          </Col>
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
+            <Card className="card-enhanced h-100">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="monthly-revenue-tooltip">
+                      Số tiền khách hàng đã thanh toán trong tháng này
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
                 <div className="text-success mb-2">
                   <i className="bi bi-graph-up fs-1"></i>
                 </div>
                 <h4 className="mb-1">{formatCurrency(financialSummary.total_revenue)}</h4>
-                <p className="text-muted mb-0">Tổng doanh thu</p>
+                <p className="text-muted mb-0">Doanh thu tháng</p>
               </Card.Body>
             </Card>
           </Col>
-          <Col xs={12} sm={6} md={3} className="mb-3">
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
             <Card className="card-enhanced h-100">
-              <Card.Body className="text-center">
-                <div className="text-danger mb-2">
-                  <i className="bi bi-graph-down fs-1"></i>
-                </div>
-                <h4 className="mb-1">{formatCurrency(financialSummary.total_expenses)}</h4>
-                <p className="text-muted mb-0">Tổng chi phí</p>
-              </Card.Body>
-            </Card>
-          </Col>
-          <Col xs={12} sm={6} md={3} className="mb-3">
-            <Card className="card-enhanced h-100">
-              <Card.Body className="text-center">
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="pending-revenue-tooltip">
+                      Số tiền khách hàng chưa thanh toán trong tháng này
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
                 <div className="text-warning mb-2">
                   <i className="bi bi-clock-history fs-1"></i>
                 </div>
                 <h4 className="mb-1">{formatCurrency(financialSummary.pending_payments)}</h4>
-                <p className="text-muted mb-0">Chờ thanh toán</p>
+                <p className="text-muted mb-0">Doanh thu chờ</p>
               </Card.Body>
             </Card>
           </Col>
-          <Col xs={12} sm={6} md={3} className="mb-3">
+          <Col xs={12} sm={6} md={2} lg={2} xl={2} className="mb-3" style={{ flex: '0 0 20%', maxWidth: '20%' }}>
             <Card className="card-enhanced h-100">
-              <Card.Body className="text-center">
-                <div className="text-info mb-2">
-                  <i className="bi bi-people fs-1"></i>
+              <Card.Body className="text-center position-relative">
+                <OverlayTrigger
+                  placement="top"
+                  overlay={
+                    <Tooltip id="expenses-tooltip">
+                      Tổng chi phí trong tháng này
+                    </Tooltip>
+                  }
+                >
+                  <i className="bi bi-info-circle position-absolute top-0 end-0 m-2 text-muted" style={{ cursor: 'help' }}></i>
+                </OverlayTrigger>
+                <div className="text-danger mb-2">
+                  <i className="bi bi-graph-down fs-1"></i>
                 </div>
-                <h4 className="mb-1">{dashboardStats?.total_customers || 0}</h4>
-                <p className="text-muted mb-0">Tổng khách hàng</p>
+                <h4 className="mb-1">{formatCurrency(financialSummary.total_expenses)}</h4>
+                <p className="text-muted mb-0">Chi phí</p>
               </Card.Body>
             </Card>
           </Col>
@@ -287,7 +328,7 @@ const Reports: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis />
-                  <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'VNĐ']} />
+                  <ChartTooltip formatter={(value) => [formatCurrency(Number(value)), 'VNĐ']} />
                   <Line type="monotone" dataKey="revenue" stroke="#8884d8" strokeWidth={2} />
                   <Line type="monotone" dataKey="expenses" stroke="#82ca9d" strokeWidth={2} />
                 </LineChart>
@@ -308,7 +349,7 @@ const Reports: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis />
-                  <Tooltip />
+                  <ChartTooltip />
                   <Bar dataKey="appointments" fill="#8884d8" />
                   <Bar dataKey="completed" fill="#82ca9d" />
                 </BarChart>
@@ -366,20 +407,20 @@ const Reports: React.FC = () => {
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
-                    data={revenueByService}
+                    data={serviceDistribution}
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    label={({ service_name, usage_count }) => `${service_name}: ${usage_count}`}
                     outerRadius={80}
                     fill="#8884d8"
-                    dataKey="total_amount"
+                    dataKey="usage_count"
                   >
-                    {revenueByService.map((entry, index) => (
+                    {serviceDistribution.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => [formatCurrency(Number(value)), 'VNĐ']} />
+                  <ChartTooltip formatter={(value: any) => [`${value} lần sử dụng`, 'Số lượng']} />
                 </PieChart>
               </ResponsiveContainer>
             </Card.Body>

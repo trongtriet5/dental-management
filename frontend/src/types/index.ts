@@ -287,13 +287,16 @@ export interface DashboardStats {
   pending_payments: number;
 }
 
+// Financial summary with additional dashboard stats
 export interface FinancialSummary {
   total_revenue: number;
   total_expenses: number;
   pending_payments: number;
-  paid_payments: number;
+  total_quoted_amount: number;
   period_start: string;
   period_end: string;
+  total_customers?: number;
+  today_appointments?: number;
 }
 
 // Profile types
