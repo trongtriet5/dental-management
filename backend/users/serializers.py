@@ -12,6 +12,8 @@ class UserSerializer(serializers.ModelSerializer):
     updated_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     date_of_birth = serializers.DateField(format='%d/%m/%Y', input_formats=['%d/%m/%Y'])
     avatar_url = serializers.ReadOnlyField()
+    # Expose role derived from Groups (read-only)
+    role = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = User
@@ -38,7 +40,7 @@ class UserSerializer(serializers.ModelSerializer):
         return attrs
     
     def create(self, validated_data):
-        password_confirm = validated_data.pop('password_confirm', None)
+        validated_data.pop('password_confirm', None)
         password = validated_data.pop('password', None)
         user = User.objects.create_user(**validated_data)
         if password:
@@ -47,27 +49,31 @@ class UserSerializer(serializers.ModelSerializer):
         return user
     
     def update(self, instance, validated_data):
-        # Remove password fields if not provided
         validated_data.pop('password', None)
         validated_data.pop('password_confirm', None)
         
-        # Handle avatar update
-        if 'avatar' in validated_data:
-            # Delete old avatar if exists
-            if instance.avatar:
-                instance.delete_old_avatar()
+        if 'avatar' in validated_data and instance.avatar:
+            instance.delete_old_avatar()
         
-        return super().update(instance, validated_data)
+        user = super().update(instance, validated_data)
+        return user
+
+    def get_role(self, obj: User):
+        return obj.primary_role
 
 
 class UserListSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     date_of_birth = serializers.DateField(format='%d/%m/%Y', read_only=True)
+    role = serializers.SerializerMethodField()
     
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 
                  'phone', 'is_active', 'created_at', 'date_of_birth']
+
+    def get_role(self, obj: User):
+        return obj.primary_role
 
 
 class DoctorSerializer(serializers.ModelSerializer):
@@ -85,7 +91,8 @@ class ProfileSerializer(serializers.ModelSerializer):
     """Serializer for user profile management"""
     avatar_url = serializers.ReadOnlyField()
     full_name = serializers.ReadOnlyField(source='get_full_name')
-    role_display = serializers.ReadOnlyField(source='get_role_display')
+    role_display = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField(read_only=True)
     created_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     updated_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     date_of_birth = serializers.DateField(format='%d/%m/%Y', input_formats=['%d/%m/%Y', '%Y-%m-%d'])
@@ -106,6 +113,12 @@ class ProfileSerializer(serializers.ModelSerializer):
                 instance.delete_old_avatar()
         
         return super().update(instance, validated_data)
+
+    def get_role_display(self, obj: User):
+        return obj.primary_role
+
+    def get_role(self, obj: User):
+        return obj.primary_role
 
 
 class ChangePasswordSerializer(serializers.Serializer):

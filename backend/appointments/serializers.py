@@ -1,10 +1,12 @@
-from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from .models import Appointment, AppointmentHistory
 from customers.serializers import CustomerSerializer, ServiceSerializer, BranchSerializer
 from users.serializers import DoctorSerializer
 from django.utils.dateformat import format
 from customers.models import Service  # Import from customers.models
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 
 class AppointmentSerializer(serializers.ModelSerializer):
@@ -21,14 +23,18 @@ class AppointmentSerializer(serializers.ModelSerializer):
     created_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     updated_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    # Consultant handling: accept optional consultant id on write, expose id+name on read
+    consultant = serializers.SerializerMethodField(read_only=True)
+    consultant_name = serializers.SerializerMethodField(read_only=True)
+    consultant_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     
     class Meta:
         model = Appointment
         fields = ['id', 'customer', 'customer_name', 'doctor', 'doctor_name', 
                  'branch', 'branch_name', 'services', 'service_names', 
                  'appointment_date', 'appointment_time', 'datetime', 'duration_minutes', 
-                 'status', 'status_display', 'notes', 'is_past', 'is_today', 'created_by', 'created_by_name', 
-                 'created_at', 'updated_at']
+                 'status', 'status_display', 'notes', 'consultant', 'consultant_name', 'is_past', 'is_today', 'created_by', 'created_by_name', 
+                 'created_at', 'updated_at', 'consultant_id']
         read_only_fields = ['created_at', 'updated_at', 'created_by']
     
     def to_internal_value(self, data):
@@ -44,7 +50,21 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 except ValueError:
                     pass  # Let Django handle the error
         
+        # Accept consultant_id as a convenience and inject into notes in a consistent format
         try:
+            consultant_val = data.get('consultant_id')
+            if consultant_val is not None and consultant_val != '':
+                try:
+                    consultant_int = int(consultant_val)
+                    # Ensure notes start with CONSULTANT_ID:<id>\n (but avoid duplicating if already present)
+                    existing_notes = data.get('notes') or ''
+                    import re
+                    if not re.match(r'^CONSULTANT_ID:\d+', str(existing_notes or '')):
+                        prefix = f"CONSULTANT_ID:{consultant_int}"
+                        data['notes'] = f"{prefix}\n{existing_notes}".strip()
+                except (ValueError, TypeError):
+                    pass
+
             validated_data = super().to_internal_value(data)
         except serializers.ValidationError as e:
             if 'services' in e.detail and 'Invalid pk' in str(e.detail['services']):
@@ -166,6 +186,31 @@ class AppointmentSerializer(serializers.ModelSerializer):
     def get_service_names(self, obj):
         return ", ".join([service.name for service in obj.services.all()])
 
+    def _parse_consultant_id(self, notes: str | None):
+        if not notes:
+            return None
+        import re
+        m = re.match(r'^CONSULTANT_ID:(\d+)', notes.strip())
+        if m:
+            try:
+                return int(m.group(1))
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def get_consultant(self, obj):
+        return self._parse_consultant_id(getattr(obj, 'notes', None))
+
+    def get_consultant_name(self, obj):
+        consultant_id = self._parse_consultant_id(getattr(obj, 'notes', None))
+        if not consultant_id:
+            return None
+        try:
+            user = User.objects.get(id=consultant_id)
+            return user.get_full_name()
+        except User.DoesNotExist:
+            return None
+
 
 class AppointmentListSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.full_name', read_only=True)
@@ -182,15 +227,42 @@ class AppointmentListSerializer(serializers.ModelSerializer):
     is_today = serializers.BooleanField(read_only=True)
     appointment_date = serializers.DateField(format='%d/%m/%Y', input_formats=['%d/%m/%Y', '%Y-%m-%d'])
     created_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
+    consultant = serializers.SerializerMethodField(read_only=True)
+    consultant_name = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Appointment
         fields = ['id', 'customer', 'customer_name', 'doctor', 'doctor_name', 'service_names', 'services', 
                  'branch', 'branch_name', 'appointment_date', 'appointment_time', 'datetime', 'status', 
-                 'notes', 'created_by_name', 'is_past', 'is_today', 'created_at']
+                 'notes', 'consultant', 'consultant_name', 'created_by_name', 'is_past', 'is_today', 'created_at']
 
     def get_service_names(self, obj):
         return ", ".join([service.name for service in obj.services.all()])
+
+    def _parse_consultant_id(self, notes: str | None):
+        if not notes:
+            return None
+        import re
+        m = re.match(r'^CONSULTANT_ID:(\d+)', notes.strip())
+        if m:
+            try:
+                return int(m.group(1))
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def get_consultant(self, obj):
+        return self._parse_consultant_id(getattr(obj, 'notes', None))
+
+    def get_consultant_name(self, obj):
+        consultant_id = self._parse_consultant_id(getattr(obj, 'notes', None))
+        if not consultant_id:
+            return None
+        try:
+            user = User.objects.get(id=consultant_id)
+            return user.get_full_name()
+        except User.DoesNotExist:
+            return None
 
 
 class AppointmentHistorySerializer(serializers.ModelSerializer):
@@ -215,14 +287,41 @@ class AppointmentCalendarSerializer(serializers.ModelSerializer):
     doctor = serializers.IntegerField(source='doctor.id', read_only=True)
     branch = serializers.IntegerField(source='branch.id', read_only=True)
     appointment_date = serializers.DateField(format='%d/%m/%Y', input_formats=['%d/%m/%Y', '%Y-%m-%d'])
+    consultant = serializers.SerializerMethodField(read_only=True)
+    consultant_name = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Appointment
         fields = ['id', 'title', 'customer', 'customer_name', 'doctor', 'doctor_name', 'service_names', 'branch', 'branch_name',
-                 'appointment_date', 'appointment_time', 'status', 'notes']
+                 'appointment_date', 'appointment_time', 'status', 'notes', 'consultant', 'consultant_name']
     
     def get_title(self, obj):
         return f"{obj.customer.full_name} - {obj.service_names}"
 
     def get_service_names(self, obj):
         return ", ".join([service.name for service in obj.services.all()])
+
+    def _parse_consultant_id(self, notes: str | None):
+        if not notes:
+            return None
+        import re
+        m = re.match(r'^CONSULTANT_ID:(\d+)', notes.strip())
+        if m:
+            try:
+                return int(m.group(1))
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def get_consultant(self, obj):
+        return self._parse_consultant_id(getattr(obj, 'notes', None))
+
+    def get_consultant_name(self, obj):
+        consultant_id = self._parse_consultant_id(getattr(obj, 'notes', None))
+        if not consultant_id:
+            return None
+        try:
+            user = User.objects.get(id=consultant_id)
+            return user.get_full_name()
+        except User.DoesNotExist:
+            return None

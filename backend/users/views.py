@@ -16,7 +16,11 @@ class IsAdminOrManager(permissions.BasePermission):
     """Custom permission to only allow admin and manager users"""
     
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.role in ['admin', 'manager']
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.groups.filter(name__in=['admin', 'manager']).exists()
+        )
 
 User = get_user_model()
 
@@ -51,14 +55,14 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class DoctorListView(generics.ListAPIView):
     """List all doctors"""
-    queryset = User.objects.filter(role='doctor', is_active=True)
+    queryset = User.objects.filter(groups__name='doctor', is_active=True).distinct()
     serializer_class = DoctorSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
 class StaffListView(generics.ListAPIView):
     """List all staff/consultants"""
-    queryset = User.objects.filter(role='creceptionist', is_active=True)
+    queryset = User.objects.filter(groups__name__in=['creceptionist', 'receptionist'], is_active=True).distinct()
     serializer_class = DoctorSerializer  # Reuse the same serializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -124,9 +128,9 @@ def user_stats(request):
     stats = {
         'total_users': User.objects.count(),
         'active_users': User.objects.filter(is_active=True).count(),
-        'doctors': User.objects.filter(role='doctor', is_active=True).count(),
-        'managers': User.objects.filter(role__in=['admin', 'manager'], is_active=True).count(),
-        'staff': User.objects.filter(role='creceptionist', is_active=True).count(),
+        'doctors': User.objects.filter(groups__name='doctor', is_active=True).distinct().count(),
+        'managers': User.objects.filter(groups__name__in=['admin', 'manager'], is_active=True).distinct().count(),
+        'staff': User.objects.filter(groups__name__in=['creceptionist', 'receptionist'], is_active=True).distinct().count(),
     }
     return Response(stats)
 
