@@ -31,9 +31,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment
         fields = ['id', 'customer', 'customer_name', 'doctor', 'doctor_name', 
-                 'branch', 'branch_name', 'services', 'service_names', 
+                 'branch', 'branch_name', 'services', 'service_names', 'services_with_quantity',
                  'appointment_date', 'appointment_time', 'datetime', 'duration_minutes', 
-                 'status', 'status_display', 'notes', 'consultant', 'consultant_name', 'is_past', 'is_today', 'created_by', 'created_by_name', 
+                 'appointment_type', 'status', 'status_display', 'notes', 'consultant', 'consultant_name', 'is_past', 'is_today', 'created_by', 'created_by_name', 
                  'created_at', 'updated_at', 'consultant_id']
         read_only_fields = ['created_at', 'updated_at', 'created_by']
     

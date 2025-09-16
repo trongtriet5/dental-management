@@ -491,13 +491,14 @@ const Customers: React.FC = (): JSX.Element => {
       // Tạo customer first_name và last_name
       const fullName = `${formData.first_name} ${formData.last_name}`.trim();
       
-      // Tạo lịch hẹn nếu được chọn
-      if (createAppointment && appointmentDate && appointmentTime && selectedServices.length > 0) {
+      // Không tạo lịch hẹn tự động khi thêm khách hàng
+      // Lịch hẹn sẽ được tạo riêng thông qua trang Appointments
+      if (false) { // Disabled automatic appointment creation
         try {
           // Kiểm tra tính khả dụng trước khi tạo/cập nhật lịch hẹn
           if (appointmentDoctor) {
             const availability = await api.checkAppointmentAvailability({
-              doctor_id: appointmentDoctor,
+              doctor_id: Number(appointmentDoctor),
               appointment_date: appointmentDate,
               appointment_time: appointmentTime,
               duration_minutes: 60,
@@ -536,9 +537,11 @@ const Customers: React.FC = (): JSX.Element => {
             doctor: appointmentDoctor || 0,
             branch: formData.branch,
             services: selectedServices,
+            services_with_quantity: selectedServices.map(serviceId => ({ service_id: serviceId, quantity: 1 })),
             appointment_date: appointmentDate,
             appointment_time: appointmentTime,
             duration_minutes: 60, // Default 60 minutes
+            appointment_type: 'consultation' as const,
             notes: appointmentConsultant ? 
               `CONSULTANT_ID:${appointmentConsultant}${appointmentNotes ? '\n' + appointmentNotes : ''}` : 
               appointmentNotes,
@@ -578,11 +581,13 @@ const Customers: React.FC = (): JSX.Element => {
               errorMessage = appointmentErr.response.data.detail;
             } else {
               // Lấy lỗi đầu tiên từ các field
-              const firstError = Object.values(appointmentErr.response.data)[0];
+              const firstError = Object.values(appointmentErr.response.data)[0] as any;
               if (Array.isArray(firstError)) {
-                errorMessage = firstError[0];
+                errorMessage = String(firstError[0]);
               } else if (typeof firstError === 'string') {
                 errorMessage = firstError;
+              } else {
+                errorMessage = String(firstError);
               }
             }
           }
@@ -611,7 +616,7 @@ const Customers: React.FC = (): JSX.Element => {
         await Swal.fire({
           icon: 'success',
           title: 'Thành công!',
-          text: `Đã ${editingCustomer ? 'cập nhật' : 'thêm'} khách hàng: ${fullName}`,
+          text: `Đã ${editingCustomer ? 'cập nhật' : 'thêm'} khách hàng: ${fullName}. Bạn có thể tạo lịch hẹn riêng cho khách hàng này trong trang "Quản lý lịch hẹn".`,
           confirmButtonText: 'OK',
           confirmButtonColor: '#0d6efd'
         });
@@ -795,6 +800,26 @@ const Customers: React.FC = (): JSX.Element => {
     if (customer.province_name) address.push(customer.province_name);
     return address.join(', ');
   }
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'active': return 'Đang CS';
+      case 'inactive': return 'Ngừng CS';
+      case 'lead': return 'Tiềm năng';
+      case 'success': return 'Thành công';
+      default: return status;
+    }
+  };
+
+  const getStatusVariant = (status: string) => {
+    switch (status) {
+      case 'active': return 'primary';
+      case 'inactive': return 'secondary';
+      case 'lead': return 'warning';
+      case 'success': return 'success';
+      default: return 'secondary';
+    }
+  };
 
   const getAppointmentInfo = (customerId: number) => {
     const appointment = customerAppointments[customerId];
@@ -1143,6 +1168,7 @@ const Customers: React.FC = (): JSX.Element => {
                   <th>Chi nhánh</th>
                   <th>Thông tin y tế</th>
                   <th>Lịch hẹn</th>
+                  <th>Trạng thái</th>
                   <th>Ngày tạo</th>
                   <th className="text-end">Thao tác</th>
                 </tr>
@@ -1218,6 +1244,11 @@ const Customers: React.FC = (): JSX.Element => {
                       </span>
                     </div>
                   </div>
+                </td>
+                <td>
+                  <span className={`badge bg-${getStatusVariant(customer.status)}`}>
+                    {getStatusText(customer.status)}
+                  </span>
                 </td>
                 <td>{formatDate(customer.created_at)}</td>
                 <td className="text-end">
@@ -1469,10 +1500,10 @@ const Customers: React.FC = (): JSX.Element => {
             </div>
 
 
-            {/* Phần 2: Thông tin đặt lịch hẹn */}
-            <div className="mb-4">
+            {/* Phần 2: Thông tin đặt lịch hẹn - Đã tắt tự động tạo lịch hẹn */}
+            <div className="mb-4" style={{ display: 'none' }}>
               <h5 className="text-primary fw-bold mb-3">
-                <i className="bi bi-calendar-plus me-2"></i>2. Thông tin đặt lịch hẹn
+                <i className="bi bi-calendar-plus me-2"></i>2. Thông tin đặt lịch hẹn (Đã tắt)
               </h5>
               
               {/* Hiển thị lịch hẹn hiện tại nếu có */}

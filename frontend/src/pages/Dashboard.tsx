@@ -11,6 +11,7 @@ const Dashboard: React.FC = () => {
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
   const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState<Appointment[]>([]);
+  const [recentCustomers, setRecentCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,12 +34,14 @@ const Dashboard: React.FC = () => {
           statsResponse,
           financialResponse,
           todayResponse,
-          upcomingResponse
+          upcomingResponse,
+          customersResponse
         ] = await Promise.allSettled([
           api.getDashboardStats(),
           api.getFinancialSummary(startDate, endDate),
           api.getTodayAppointments(),
-          api.getUpcomingAppointments()
+          api.getUpcomingAppointments(),
+          api.getCustomers({ page_size: 5 })
         ]);
 
         // Handle stats
@@ -59,6 +62,11 @@ const Dashboard: React.FC = () => {
         // Handle upcoming appointments
         if (upcomingResponse.status === 'fulfilled') {
           setUpcomingAppointments(upcomingResponse.value);
+        }
+
+        // Handle recent customers
+        if (customersResponse.status === 'fulfilled') {
+          setRecentCustomers(customersResponse.value.results || []);
         }
 
       } catch (err) {
@@ -232,7 +240,7 @@ const Dashboard: React.FC = () => {
         </Col>
       </Row>
 
-      {/* Today's Appointments */}
+      {/* Appointments Section - Moved to top */}
       <Row className="mb-4">
         <Col md={8}>
           <Card className="h-100">
@@ -325,6 +333,81 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Recent Customers Section - Moved to bottom */}
+      <Row className="mb-4">
+        <Col>
+          <Card className="h-100">
+            <Card.Header className="bg-white border-bottom">
+              <h5 className="mb-0">
+                <i className="bi bi-people me-2"></i>
+                Khách hàng mới nhất
+              </h5>
+            </Card.Header>
+            <Card.Body>
+              {recentCustomers.length === 0 ? (
+                <div className="text-center text-muted py-4">
+                  <i className="bi bi-person-x fs-1 mb-3 d-block"></i>
+                  <p>Chưa có khách hàng nào</p>
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <table className="table table-hover mb-0">
+                    <thead>
+                      <tr>
+                        <th>Khách hàng</th>
+                        <th>Số điện thoại</th>
+                        <th>Email</th>
+                        <th>Ngày tạo</th>
+                        <th>Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recentCustomers.map((customer) => (
+                        <tr key={customer.id}>
+                          <td className="fw-semibold">{customer.full_name}</td>
+                          <td>{customer.phone}</td>
+                          <td>{customer.email || 'Chưa có'}</td>
+                          <td>
+                            {(() => {
+                              try {
+                                // Handle DD/MM/YYYY HH:MM format from backend
+                                if (customer.created_at && customer.created_at.includes('/')) {
+                                  const [datePart, timePart] = customer.created_at.split(' ');
+                                  const [day, month, year] = datePart.split('/');
+                                  const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                                  return date.toLocaleDateString('vi-VN');
+                                }
+                                // Fallback to direct parsing
+                                return new Date(customer.created_at).toLocaleDateString('vi-VN');
+                              } catch (error) {
+                                return customer.created_at || 'N/A';
+                              }
+                            })()}
+                          </td>
+                          <td>
+                            <span className={`badge ${
+                              customer.status === 'active' ? 'bg-success' :
+                              customer.status === 'inactive' ? 'bg-secondary' :
+                              customer.status === 'success' ? 'bg-primary' :
+                              'bg-success' // Default to 'Đang chăm sóc'
+                            }`}>
+                              {customer.status === 'active' ? 'Đang chăm sóc' :
+                               customer.status === 'inactive' ? 'Ngưng chăm sóc' :
+                               customer.status === 'success' ? 'Thành công' :
+                               'Đang chăm sóc'} {/* Default status */}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </Card.Body>

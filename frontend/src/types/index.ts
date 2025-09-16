@@ -105,6 +105,7 @@ export interface Customer {
   branch: number;
   branch_name?: string;
   services_used?: Service[];
+  status: 'active' | 'inactive' | 'lead' | 'success';
   created_by?: number;
   created_by_name?: string;
   created_at: string;
@@ -125,10 +126,12 @@ export interface Appointment {
   services: number[];
   service_names: string;
   services_detail?: Service[];
+  services_with_quantity: Array<{service_id: number, quantity: number}>;
   appointment_date: string;
   appointment_time: string;
   datetime: string;
   duration_minutes: number;
+  appointment_type: 'consultation' | 'treatment' | 'follow_up' | 'emergency';
   status: 'scheduled' | 'confirmed' | 'arrived' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
   status_display?: string;
   notes?: string;
@@ -261,9 +264,11 @@ export interface AppointmentFormData {
   doctor: number;
   branch: number;
   services: number[];
+  services_with_quantity: Array<{service_id: number, quantity: number}>;
   appointment_date: string;
   appointment_time: string;
   duration_minutes: number;
+  appointment_type: 'consultation' | 'treatment' | 'follow_up' | 'emergency';
   notes?: string;
 }
 

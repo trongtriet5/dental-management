@@ -17,6 +17,13 @@ class Appointment(models.Model):
         ('no_show', 'Khách không đến'),
     ]
 
+    APPOINTMENT_TYPE_CHOICES = [
+        ('consultation', 'Tham khảo dịch vụ'),
+        ('treatment', 'Điều trị'),
+        ('follow_up', 'Tái khám'),
+        ('emergency', 'Cấp cứu'),
+    ]
+
     customer = models.ForeignKey(Customer, on_delete=models.CASCADE, verbose_name="Khách hàng")
     doctor = models.ForeignKey(
         User,
@@ -29,11 +36,18 @@ class Appointment(models.Model):
         Service,
         related_name='appointments'
     )
+    services_with_quantity = models.JSONField(default=list, blank=True, verbose_name="Dịch vụ với số lượng")
 
     appointment_date = models.DateField(verbose_name="Ngày hẹn")
     appointment_time = models.TimeField(verbose_name="Giờ hẹn")
     duration_minutes = models.PositiveIntegerField(verbose_name="Thời gian (phút)")
 
+    appointment_type = models.CharField(
+        max_length=20, 
+        choices=APPOINTMENT_TYPE_CHOICES, 
+        default='consultation', 
+        verbose_name="Loại lịch hẹn"
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='scheduled', verbose_name="Trạng thái")
     notes = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
 

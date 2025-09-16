@@ -9,8 +9,8 @@ interface LayoutProps {
 
 const menuItems = [
   { text: 'Trang chủ', icon: 'bi-house', path: '/', roles: ['admin', 'manager', 'doctor', 'creceptionist'] },
-  { text: 'Khách hàng', icon: 'bi-people', path: '/customers', roles: ['admin', 'manager', 'creceptionist'] },
   { text: 'Lịch hẹn', icon: 'bi-calendar3', path: '/appointments', roles: ['admin', 'manager', 'doctor', 'creceptionist'] },
+  { text: 'Khách hàng', icon: 'bi-people', path: '/customers', roles: ['admin', 'manager', 'creceptionist'] },
   { text: 'Thu chi', icon: 'bi-cash-stack', path: '/financials', roles: ['admin', 'manager', 'creceptionist'] },
   { text: 'Báo cáo', icon: 'bi-graph-up', path: '/reports', roles: ['admin', 'manager'] },
   { text: 'Quản lý nhân viên', icon: 'bi-person-gear', path: '/staff', roles: ['admin', 'manager'] },

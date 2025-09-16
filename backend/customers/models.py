@@ -40,9 +40,9 @@ class Customer(models.Model):
     ]
 
     STATUS_CHOICES = [
-        ('active', 'Đang CS'),
-        ('inactive', 'Ngừng CS'),
-        ('lead', 'Tiềm năng'),
+        ('active', 'Đang chăm sóc'),
+        ('inactive', 'Ngưng chăm sóc'),
+        ('success', 'Thành công'),
     ]
 
     # Thông tin cơ bản

@@ -18,8 +18,8 @@ class AppointmentAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Thông tin lịch hẹn', {
-            'fields': ('customer', 'doctor', 'branch', 'services', 'appointment_date', 
-                      'appointment_time', 'duration_minutes')
+            'fields': ('customer', 'doctor', 'branch', 'services', 'services_with_quantity', 'appointment_date', 
+                      'appointment_time', 'duration_minutes', 'appointment_type')
         }),
         ('Trạng thái', {
             'fields': ('status', 'notes')

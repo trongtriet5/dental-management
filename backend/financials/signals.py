@@ -2,6 +2,7 @@ from django.db.models.signals import post_save, m2m_changed
 from django.dispatch import receiver
 from appointments.models import Appointment
 from financials.models import Payment
+from customers.models import Customer
 from django.utils import timezone
 
 
@@ -134,3 +135,24 @@ def auto_merge_payments_for_appointment(sender, instance, created, **kwargs):
                 
         except Exception as e:
             print(f"Lỗi khi tự động gộp Payment cho appointment {instance.id}: {e}")
+
+
+@receiver(post_save, sender=Payment)
+def update_customer_status_on_payment_success(sender, instance, created, **kwargs):
+    """Cập nhật trạng thái khách hàng thành 'Thành công' khi thanh toán thành công"""
+    if instance.status == 'paid' and instance.is_fully_paid:
+        try:
+            customer = instance.customer
+            if customer.status != 'success':
+                customer.status = 'success'
+                customer.save()
+                print(f"✅ Đã cập nhật trạng thái khách hàng {customer.full_name} thành 'Thành công'")
+                
+            # Cập nhật trạng thái appointment thành 'completed' nếu có
+            if instance.appointment and instance.appointment.status != 'completed':
+                instance.appointment.status = 'completed'
+                instance.appointment.save()
+                print(f"✅ Đã cập nhật trạng thái lịch hẹn {instance.appointment.id} thành 'Hoàn thành'")
+                
+        except Exception as e:
+            print(f"Lỗi cập nhật trạng thái khách hàng/appointment: {e}")

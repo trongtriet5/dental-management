@@ -6,6 +6,7 @@ import TimePicker from '../components/TimePicker';
 import DatePicker from '../components/DatePicker';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../utils/date';
 import { formatTime, formatDate } from '../utils/time';
+import { formatCurrency } from '../utils/currency';
 
 // Helper function to parse date from DD/MM/YYYY format
 const parseAppointmentDate = (dateString: string): Date | null => {
@@ -50,7 +51,6 @@ const Appointments: React.FC = () => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table');
-  const [calendarDate, setCalendarDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedDoctor, setSelectedDoctor] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,11 +59,33 @@ const Appointments: React.FC = () => {
     doctor: 0,
     branch: 0,
     services: [],
+    services_with_quantity: [],
     appointment_date: '',
     appointment_time: '',
     duration_minutes: 60,
+    appointment_type: 'consultation',
     notes: '',
   });
+  
+  // State cho thông tin khách hàng mới
+  const [newCustomerData, setNewCustomerData] = useState({
+    first_name: '',
+    last_name: '',
+    phone: '',
+    email: '',
+    gender: 'male' as 'male' | 'female' | 'other',
+    date_of_birth: '',
+    province_code: '',
+    ward_code: '',
+    street: '',
+    medical_history: '',
+    allergies: '',
+    notes: '',
+  });
+  
+  const [isNewCustomer, setIsNewCustomer] = useState(false);
+  const [provinces, setProvinces] = useState<any[]>([]);
+  const [wards, setWards] = useState<any[]>([]);
 
   useEffect(() => {
     fetchData();
@@ -71,22 +93,33 @@ const Appointments: React.FC = () => {
 
   const fetchData = async () => {
     try {
-      const [appointmentsData, customersData, servicesData, branchesData, doctorsData] = await Promise.all([
+      const [appointmentsData, customersData, servicesData, branchesData, doctorsData, provincesData] = await Promise.all([
         api.getAppointments({ page_size: 1000 }),
         api.getCustomers({ page_size: 1000 }),
         api.getServices(),
         api.getBranches(),
         api.getDoctors(),
+        api.getProvinces(),
       ]);
       setAppointments(appointmentsData.results);
       setCustomers(customersData.results);
       setServices(servicesData.results);
       setBranches(branchesData.results);
       setDoctors(doctorsData.results);
+      setProvinces(provincesData);
     } catch (err: any) {
       setError('Không thể tải dữ liệu lịch hẹn');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const fetchWards = async (provinceCode: string) => {
+    try {
+      const wardsData = await api.getWards(provinceCode);
+      setWards(wardsData);
+    } catch (err) {
+      console.error('Error fetching wards:', err);
     }
   };
 
@@ -103,21 +136,40 @@ const Appointments: React.FC = () => {
         doctor: appointment.doctor,
         branch: appointment.branch,
         services: filteredServices,
+        services_with_quantity: appointment.services_with_quantity || [],
         appointment_date: appointment.appointment_date,
         appointment_time: appointment.appointment_time,
         duration_minutes: appointment.duration_minutes,
+        appointment_type: appointment.appointment_type || 'consultation',
         notes: appointment.notes || '',
       });
     } else {
       setEditingAppointment(null);
+      setIsNewCustomer(false);
+      setNewCustomerData({
+        first_name: '',
+        last_name: '',
+        phone: '',
+        email: '',
+        gender: 'male',
+        date_of_birth: '',
+        province_code: '',
+        ward_code: '',
+        street: '',
+        medical_history: '',
+        allergies: '',
+        notes: '',
+      });
       setFormData({
         customer: 0,
         doctor: 0,
         branch: 0,
         services: [],
+        services_with_quantity: [],
         appointment_date: new Date().toISOString().split('T')[0],
         appointment_time: '',
         duration_minutes: 60,
+        appointment_type: 'consultation',
         notes: ''
       });
     }
@@ -127,51 +179,127 @@ const Appointments: React.FC = () => {
   const handleCloseDialog = () => {
     setShowDialog(false);
     setEditingAppointment(null);
+    setIsNewCustomer(false);
+    setNewCustomerData({
+      first_name: '',
+      last_name: '',
+      phone: '',
+      email: '',
+      gender: 'male',
+      date_of_birth: '',
+      province_code: '',
+      ward_code: '',
+      street: '',
+      medical_history: '',
+      allergies: '',
+      notes: '',
+    });
+    setWards([]);
   };
 
   const handleSubmit = async () => {
     setDialogError('');
     setIsSubmitting(true);
 
-    const validServiceIds = new Set(services.map(s => s.id));
-    const sanitizedServices = (formData.services || []).filter(id => validServiceIds.has(id));
-
-    if (sanitizedServices.length !== (formData.services || []).length) {
-        setDialogError('Một vài dịch vụ đã chọn không còn hợp lệ và đã được tự động loại bỏ. Vui lòng kiểm tra lại.');
-        setFormData({...formData, services: sanitizedServices });
+    try {
+      // Validation
+      if (!formData.doctor || !formData.branch) {
+        setDialogError('Vui lòng điền đầy đủ các trường bắt buộc: Bác sĩ và Chi nhánh.');
         return;
-    }
+      }
 
-    if (!formData.customer || !formData.doctor || !formData.branch) {
-        setDialogError('Vui lòng điền đầy đủ các trường bắt buộc: Khách hàng, Bác sĩ, và Chi nhánh.');
-        return;
-    }
-
-    // Only require services for new appointments
-    if (!editingAppointment && sanitizedServices.length === 0) {
+      if (formData.services_with_quantity.length === 0) {
         setDialogError('Vui lòng chọn ít nhất một dịch vụ.');
         return;
-    }
+      }
 
-    // Check business hours
-    if (!isValidAppointmentTime(formData.appointment_date, formData.appointment_time)) {
+      // Check business hours
+      if (!isValidAppointmentTime(formData.appointment_date, formData.appointment_time)) {
         const businessHoursInfo = getBusinessHoursInfo(formData.appointment_date);
         setDialogError(`Thời gian đặt lịch không hợp lệ. Giờ làm việc: ${businessHoursInfo}`);
         return;
-    }
+      }
 
-    try {
-      const dataToSubmit = { ...formData, services: sanitizedServices };
+      let customerId = formData.customer;
+
+      // Nếu là khách hàng mới, tạo khách hàng trước
+      if (isNewCustomer) {
+        // Validation cho thông tin khách hàng mới
+        if (!newCustomerData.first_name.trim() || !newCustomerData.last_name.trim() || !newCustomerData.phone.trim()) {
+          setDialogError('Vui lòng điền đầy đủ thông tin khách hàng: Họ, Tên và Số điện thoại.');
+          return;
+        }
+
+        if (!newCustomerData.date_of_birth) {
+          setDialogError('Vui lòng chọn ngày sinh.');
+          return;
+        }
+
+        // Tạo khách hàng mới
+        const customerData = {
+          first_name: newCustomerData.first_name.trim(),
+          last_name: newCustomerData.last_name.trim(),
+          phone: newCustomerData.phone.trim(),
+          email: newCustomerData.email?.trim() || '',
+          gender: newCustomerData.gender,
+          date_of_birth: newCustomerData.date_of_birth,
+          province: newCustomerData.province_code || null,
+          ward: newCustomerData.ward_code || null,
+          street: newCustomerData.street?.trim() || '',
+          medical_history: newCustomerData.medical_history?.trim() || '',
+          allergies: newCustomerData.allergies?.trim() || '',
+          notes: newCustomerData.notes?.trim() || '',
+          branch: formData.branch,
+          services_used: formData.services_with_quantity.map(s => s.service_id)
+        };
+
+        const newCustomer = await api.createCustomer(customerData);
+        customerId = newCustomer.id;
+
+        // Tạo thanh toán tự động
+        const totalAmount = formData.services_with_quantity.reduce((total, serviceWithQty) => {
+          const service = services.find(s => s.id === serviceWithQty.service_id);
+          return total + (service ? service.price * serviceWithQty.quantity : 0);
+        }, 0);
+
+        if (totalAmount > 0) {
+          const paymentData = {
+            customer: customerId,
+            services: formData.services_with_quantity.map(s => s.service_id),
+            branch: formData.branch,
+            amount: totalAmount,
+            payment_method: 'cash' as const,
+            notes: 'Thanh toán tự động khi đặt lịch hẹn'
+          };
+
+          await api.createPayment(paymentData);
+        }
+      }
+
+      // Tạo lịch hẹn
+      const appointmentData = {
+        customer: customerId,
+        doctor: formData.doctor,
+        branch: formData.branch,
+        services: formData.services_with_quantity.map(s => s.service_id),
+        services_with_quantity: formData.services_with_quantity,
+        appointment_date: formData.appointment_date,
+        appointment_time: formData.appointment_time,
+        duration_minutes: formData.duration_minutes,
+        appointment_type: formData.appointment_type,
+        notes: formData.notes,
+      };
 
       if (editingAppointment) {
-        await api.updateAppointment(editingAppointment.id, dataToSubmit);
+        await api.updateAppointment(editingAppointment.id, appointmentData);
       } else {
-        await api.createAppointment(dataToSubmit);
+        await api.createAppointment(appointmentData);
       }
       
-      // Only close dialog and refresh data if successful
+      // Refresh data and close dialog
       await fetchData();
       handleCloseDialog();
+      
     } catch (err: any) {
       // Parse error message for better display
       let errorMessage = 'Không thể lưu lịch hẹn';
@@ -195,7 +323,6 @@ const Appointments: React.FC = () => {
       }
       
       setDialogError(errorMessage);
-      // Do NOT close the dialog - let user fix the error
     } finally {
       setIsSubmitting(false);
     }
@@ -235,27 +362,17 @@ const Appointments: React.FC = () => {
       return false; // Skip invalid dates
     }
     
-    if (viewMode === 'calendar') {
-      // For calendar view, filter by selected calendar date
-      if (calendarDate) {
-        const calendarDateObj = new Date(calendarDate);
-        const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate());
-        const calendarDateOnly = new Date(calendarDateObj.getFullYear(), calendarDateObj.getMonth(), calendarDateObj.getDate());
-        matchesDate = appointmentDateOnly.getTime() === calendarDateOnly.getTime();
+    // Use date range filters for both table and calendar view
+    if (startDate) {
+      const start = parseAppointmentDate(startDate);
+      if (start) {
+        matchesDate = matchesDate && appointmentDate >= start;
       }
-    } else {
-      // For table view, use date range filters
-      if (startDate) {
-        const start = parseAppointmentDate(startDate);
-        if (start) {
-          matchesDate = matchesDate && appointmentDate >= start;
-        }
-      }
-      if (endDate) {
-        const end = parseAppointmentDate(endDate);
-        if (end) {
-          matchesDate = matchesDate && appointmentDate <= end;
-        }
+    }
+    if (endDate) {
+      const end = parseAppointmentDate(endDate);
+      if (end) {
+        matchesDate = matchesDate && appointmentDate <= end;
       }
     }
 
@@ -307,20 +424,145 @@ const Appointments: React.FC = () => {
 
   const generateTimeSlots = () => {
     const slots = [];
-    for (let hour = 8; hour <= 20; hour++) {
+    
+    // Default business hours (can be adjusted based on date range if needed)
+    let startHour = 8;
+    let endHour = 20;
+    
+    for (let hour = startHour; hour <= endHour; hour++) {
       slots.push({
         time: `${hour.toString().padStart(2, '0')}:00`,
-        hour: hour
+        hour: hour,
+        isBusinessHour: true
       });
+      
+      // Add 30-minute slots for better granularity
+      if (hour < endHour) {
+        slots.push({
+          time: `${hour.toString().padStart(2, '0')}:30`,
+          hour: hour,
+          minute: 30,
+          isBusinessHour: true
+        });
+      }
     }
     return slots;
   };
 
-  const getAppointmentsForTimeSlot = (timeSlot: { time: string; hour: number }) => {
+  const getAppointmentsForTimeSlot = (timeSlot: { time: string; hour: number; minute?: number }) => {
+    return filteredAppointments.filter(appointment => {
+      const [appointmentHour, appointmentMinute] = appointment.appointment_time.split(':').map(Number);
+      
+      if (timeSlot.minute !== undefined) {
+        // Check for exact 30-minute slot match
+        return appointmentHour === timeSlot.hour && appointmentMinute === timeSlot.minute;
+      } else {
+        // Check for hour slot (00 minutes)
+        return appointmentHour === timeSlot.hour && appointmentMinute === 0;
+      }
+    });
+  };
+
+  const getAppointmentsInTimeRange = (startHour: number, endHour: number) => {
     return filteredAppointments.filter(appointment => {
       const appointmentHour = parseInt(appointment.appointment_time.split(':')[0]);
-      return appointmentHour === timeSlot.hour;
+      return appointmentHour >= startHour && appointmentHour < endHour;
     });
+  };
+
+
+  const getAppointmentsForDate = (date: string) => {
+    return filteredAppointments.filter(appointment => {
+      const appointmentDate = parseAppointmentDate(appointment.appointment_date);
+      if (!appointmentDate) return false;
+      
+      const targetDate = new Date(date);
+      const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate());
+      const targetDateOnly = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+      
+      return appointmentDateOnly.getTime() === targetDateOnly.getTime();
+    });
+  };
+
+  const detectConflicts = (appointments: Appointment[]) => {
+    const conflicts: Array<{
+      appointment1: Appointment;
+      appointment2: Appointment;
+      conflictType: 'time' | 'doctor' | 'both';
+    }> = [];
+
+    for (let i = 0; i < appointments.length; i++) {
+      for (let j = i + 1; j < appointments.length; j++) {
+        const apt1 = appointments[i];
+        const apt2 = appointments[j];
+        
+        // Check if same doctor
+        const sameDoctor = apt1.doctor === apt2.doctor;
+        
+        // Check if same date
+        const apt1Date = parseAppointmentDate(apt1.appointment_date);
+        const apt2Date = parseAppointmentDate(apt2.appointment_date);
+        
+        if (!apt1Date || !apt2Date) continue;
+        
+        const sameDate = apt1Date.getTime() === apt2Date.getTime();
+        
+        if (sameDate && sameDoctor) {
+          // Check time overlap
+          const apt1Start = new Date(`2000-01-01 ${apt1.appointment_time}`);
+          const apt1End = new Date(apt1Start.getTime() + apt1.duration_minutes * 60000);
+          const apt2Start = new Date(`2000-01-01 ${apt2.appointment_time}`);
+          const apt2End = new Date(apt2Start.getTime() + apt2.duration_minutes * 60000);
+          
+          const timeOverlap = apt1Start < apt2End && apt2Start < apt1End;
+          
+          if (timeOverlap) {
+            conflicts.push({
+              appointment1: apt1,
+              appointment2: apt2,
+              conflictType: 'both'
+            });
+          }
+        }
+      }
+    }
+    
+    return conflicts;
+  };
+
+  const getConflictWarning = () => {
+    const conflicts = detectConflicts(filteredAppointments);
+    if (conflicts.length === 0) return null;
+    
+    return (
+      <Alert variant="warning" className="alert-enhanced mb-3">
+        <div className="d-flex align-items-start">
+          <i className="bi bi-exclamation-triangle-fill me-2 mt-1"></i>
+          <div>
+            <strong>Cảnh báo xung đột lịch hẹn:</strong>
+            <div className="mt-2">
+              {conflicts.map((conflict, index) => (
+                <div key={index} className="mb-1">
+                  <small>
+                    <strong>{conflict.appointment1.customer_name}</strong> ({conflict.appointment1.appointment_time}) 
+                    xung đột với <strong>{conflict.appointment2.customer_name}</strong> ({conflict.appointment2.appointment_time})
+                    - Bác sĩ: {conflict.appointment1.doctor_name}
+                  </small>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Alert>
+    );
+  };
+
+  const hasConflict = (appointment: Appointment) => {
+    const conflicts = detectConflicts(filteredAppointments);
+    return conflicts.some(conflict => 
+      conflict.appointment1.id === appointment.id || 
+      conflict.appointment2.id === appointment.id
+    );
   };
 
   const isBusinessDay = (date: Date) => {
@@ -365,6 +607,58 @@ const Appointments: React.FC = () => {
 
   return (
     <div className="container-fluid p-4">
+      <style>
+        {`
+          .appointment-card {
+            transition: all 0.2s ease-in-out;
+          }
+          
+          .appointment-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15) !important;
+          }
+          
+          .calendar-container {
+            scrollbar-width: thin;
+            scrollbar-color: #dee2e6 #f8f9fa;
+          }
+          
+          .calendar-container::-webkit-scrollbar {
+            width: 6px;
+          }
+          
+          .calendar-container::-webkit-scrollbar-track {
+            background: #f8f9fa;
+          }
+          
+          .calendar-container::-webkit-scrollbar-thumb {
+            background: #dee2e6;
+            border-radius: 3px;
+          }
+          
+          .calendar-container::-webkit-scrollbar-thumb:hover {
+            background: #adb5bd;
+          }
+          
+          .appointments-list {
+            scrollbar-width: thin;
+            scrollbar-color: #dee2e6 #f8f9fa;
+          }
+          
+          .appointments-list::-webkit-scrollbar {
+            width: 4px;
+          }
+          
+          .appointments-list::-webkit-scrollbar-track {
+            background: #f8f9fa;
+          }
+          
+          .appointments-list::-webkit-scrollbar-thumb {
+            background: #dee2e6;
+            border-radius: 2px;
+          }
+        `}
+      </style>
       {/* Header Section */}
       <div className="d-flex justify-content-between align-items-center mb-4">
         <h2 className="text-primary fw-bold mb-0">Quản lý lịch hẹn</h2>
@@ -384,6 +678,7 @@ const Appointments: React.FC = () => {
               Lịch trình
             </ToggleButton>
           </ToggleButtonGroup>
+          
           <Button
             variant="primary"
             className="btn-primary-enhanced"
@@ -400,6 +695,9 @@ const Appointments: React.FC = () => {
           {error}
         </Alert>
       )}
+
+      {/* Conflict Warning */}
+      {viewMode === 'calendar' && getConflictWarning()}
 
       {/* Search and Filter Section */}
       <Card className="card-enhanced mb-4">
@@ -466,41 +764,27 @@ const Appointments: React.FC = () => {
                 </Form.Select>
               </Form.Group>
             </Col>
-            {viewMode === 'table' && (
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label className="fw-semibold text-primary">Khoảng thời gian</Form.Label>
-                  <div className="d-flex gap-2">
-                    <Form.Control
-                      type="date"
-                      placeholder="Từ ngày"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="flex-fill"
-                    />
-                    <Form.Control
-                      type="date"
-                      placeholder="Đến ngày"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="flex-fill"
-                    />
-                  </div>
-                </Form.Group>
-              </Col>
-            )}
-            {viewMode === 'calendar' && (
-              <Col md={6}>
-                <Form.Group>
-                  <Form.Label className="fw-semibold text-primary">Ngày xem</Form.Label>
-                  <DatePicker
-                    value={calendarDate}
-                    onChange={setCalendarDate}
-                    className="enhanced-form"
+            <Col md={6}>
+              <Form.Group>
+                <Form.Label className="fw-semibold text-primary">Khoảng thời gian</Form.Label>
+                <div className="d-flex gap-2">
+                  <Form.Control
+                    type="date"
+                    placeholder="Từ ngày"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="flex-fill"
                   />
-                </Form.Group>
-              </Col>
-            )}
+                  <Form.Control
+                    type="date"
+                    placeholder="Đến ngày"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="flex-fill"
+                  />
+                </div>
+              </Form.Group>
+            </Col>
           </Row>
         </Card.Body>
       </Card>
@@ -578,24 +862,17 @@ const Appointments: React.FC = () => {
               <div className="d-flex justify-content-between align-items-center mb-4">
                 <h4 className="text-primary fw-bold mb-0">
                   <i className="bi bi-calendar3 me-2"></i>
-                  Lịch trình ngày {calendarDate ? formatDate(calendarDate) : 'Hôm nay'}
+                  Lịch trình theo thời gian
                 </h4>
                 <div className="d-flex gap-2">
                   <Button
                     variant="outline-secondary"
                     size="sm"
                     onClick={() => {
-                      const prevDate = new Date(calendarDate);
-                      prevDate.setDate(prevDate.getDate() - 1);
-                      setCalendarDate(prevDate.toISOString().split('T')[0]);
+                      const today = new Date().toISOString().split('T')[0];
+                      setStartDate(today);
+                      setEndDate(today);
                     }}
-                  >
-                    <i className="bi bi-chevron-left"></i>
-                  </Button>
-                  <Button
-                    variant="outline-secondary"
-                    size="sm"
-                    onClick={() => setCalendarDate(new Date().toISOString().split('T')[0])}
                   >
                     Hôm nay
                   </Button>
@@ -603,12 +880,31 @@ const Appointments: React.FC = () => {
                     variant="outline-secondary"
                     size="sm"
                     onClick={() => {
-                      const nextDate = new Date(calendarDate);
-                      nextDate.setDate(nextDate.getDate() + 1);
-                      setCalendarDate(nextDate.toISOString().split('T')[0]);
+                      const today = new Date();
+                      const weekStart = new Date(today);
+                      weekStart.setDate(today.getDate() - today.getDay());
+                      const weekEnd = new Date(weekStart);
+                      weekEnd.setDate(weekStart.getDate() + 6);
+                      
+                      setStartDate(weekStart.toISOString().split('T')[0]);
+                      setEndDate(weekEnd.toISOString().split('T')[0]);
                     }}
                   >
-                    <i className="bi bi-chevron-right"></i>
+                    Tuần này
+                  </Button>
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    onClick={() => {
+                      const today = new Date();
+                      const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+                      const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                      
+                      setStartDate(monthStart.toISOString().split('T')[0]);
+                      setEndDate(monthEnd.toISOString().split('T')[0]);
+                    }}
+                  >
+                    Tháng này
                   </Button>
                 </div>
               </div>
@@ -636,124 +932,160 @@ const Appointments: React.FC = () => {
               </div>
 
               {/* Calendar Grid */}
-              <div className="border rounded">
-                <div className="row g-0">
-                  {/* Time Column Header */}
-                  <div className="col-2 border-end bg-light">
-                    <div className="p-3 fw-semibold text-center text-primary">
-                      <i className="bi bi-clock me-1"></i>
-                      Giờ
-                    </div>
-                  </div>
-                  
-                  {/* Appointments Column */}
-                  <div className="col-10">
-                    <div className="p-3 fw-semibold text-center text-primary border-bottom">
-                      <i className="bi bi-calendar-event me-1"></i>
-                      Lịch hẹn
-                    </div>
-                  </div>
-                </div>
-
-                {/* Time Slots */}
-                {generateTimeSlots().map((timeSlot) => {
-                  const appointmentsInSlot = getAppointmentsForTimeSlot(timeSlot);
-                  return (
-                    <div key={timeSlot.time} className="row g-0 border-bottom">
-                      {/* Time Slot */}
-                      <div className="col-2 border-end bg-light d-flex align-items-center justify-content-center">
-                        <div className="p-3 text-center">
-                          <div className="fw-semibold">{timeSlot.time}</div>
-                        </div>
+                <div className="border rounded shadow-sm">
+                  <div className="row g-0">
+                    {/* Time Column Header */}
+                    <div className="col-2 border-end bg-light">
+                      <div className="p-3 fw-semibold text-center text-primary">
+                        <i className="bi bi-clock me-1"></i>
+                        Giờ
                       </div>
+                    </div>
+                    
+                    {/* Appointments Column */}
+                    <div className="col-10">
+                      <div className="p-3 fw-semibold text-center text-primary border-bottom">
+                        <i className="bi bi-calendar-event me-1"></i>
+                        Lịch hẹn
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Time Slots */}
+                  <div className="calendar-container" style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                    {generateTimeSlots().map((timeSlot, index) => {
+                      const appointmentsInSlot = getAppointmentsForTimeSlot(timeSlot);
+                      const isCurrentHour = new Date().getHours() === timeSlot.hour && 
+                                          new Date().getMinutes() >= (timeSlot.minute || 0) &&
+                                          new Date().getMinutes() < (timeSlot.minute || 0) + 30;
                       
-                      {/* Appointments */}
-                      <div className="col-10 p-3">
-                        {appointmentsInSlot.length > 0 ? (
-                          <div className="row g-2">
-                            {appointmentsInSlot.map((appointment) => (
-                              <div key={appointment.id} className="col-md-6 col-lg-4">
-                                <div
-                                  className="card border-0 h-100"
-                                  style={{
-                                    borderLeft: `4px solid ${getDoctorColor(appointment.doctor)} !important`,
-                                    boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06)',
-                                    transition: 'box-shadow 0.2s ease-in-out'
-                                  }}
-                                >
-                                  <div className="card-body p-3">
-                                    <div className="d-flex justify-content-between align-items-start mb-2">
-                                      <h6 className="card-title mb-0 fw-semibold text-dark">
-                                        {appointment.customer_name}
-                                      </h6>
-                                      <span className={`badge bg-${getStatusVariant(appointment.status)}`}>
-                                        {getStatusText(appointment.status)}
-                                      </span>
-                                    </div>
-                                    
-                                    <div className="mb-2">
-                                      <small className="text-muted d-block">
-                                        <i className="bi bi-person me-1"></i>
-                                        {appointment.doctor_name}
-                                      </small>
-                                      <small className="text-muted d-block">
-                                        <i className="bi bi-geo-alt me-1"></i>
-                                        {appointment.branch_name}
-                                      </small>
-                                    </div>
-                                    
-                                    <div className="mb-3">
-                                      <small className="text-muted d-block mb-1">Dịch vụ:</small>
-                                      <div className="text-truncate" title={appointment.service_names}>
-                                        {appointment.service_names}
+                      return (
+                        <div 
+                          key={timeSlot.time} 
+                          className={`row g-0 border-bottom ${isCurrentHour ? 'bg-warning bg-opacity-10' : ''}`}
+                          style={{ minHeight: '80px' }}
+                        >
+                          {/* Time Slot */}
+                          <div className="col-2 border-end bg-light d-flex align-items-center justify-content-center">
+                            <div className="p-2 text-center">
+                              <div className="fw-semibold text-primary" style={{ fontSize: '0.9rem' }}>
+                                {timeSlot.time}
+                              </div>
+                              {isCurrentHour && (
+                                <div className="badge bg-warning text-dark mt-1" style={{ fontSize: '0.6rem' }}>
+                                  Hiện tại
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {/* Appointments */}
+                          <div className="col-10 p-2">
+                            {appointmentsInSlot.length > 0 ? (
+                              <div className="row g-2">
+                                {appointmentsInSlot.map((appointment) => (
+                                  <div key={appointment.id} className="col-md-6 col-lg-4">
+                                    <div
+                                      className={`card border-0 h-100 appointment-card ${hasConflict(appointment) ? 'border-danger' : ''}`}
+                                      style={{
+                                        borderLeft: `4px solid ${hasConflict(appointment) ? '#dc3545' : getDoctorColor(appointment.doctor)} !important`,
+                                        boxShadow: hasConflict(appointment) ? '0 2px 4px rgba(220, 53, 69, 0.3)' : '0 2px 4px rgba(0, 0, 0, 0.1)',
+                                        transition: 'all 0.2s ease-in-out',
+                                        cursor: 'pointer'
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.transform = 'translateY(-2px)';
+                                        e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.transform = 'translateY(0)';
+                                        e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+                                      }}
+                                      onClick={() => handleOpenDialog(appointment)}
+                                    >
+                                      <div className="card-body p-2">
+                                        <div className="d-flex justify-content-between align-items-start mb-1">
+                                          <h6 className="card-title mb-0 fw-semibold text-dark" style={{ fontSize: '0.85rem' }}>
+                                            {appointment.customer_name}
+                                          </h6>
+                                          <span className={`badge bg-${getStatusVariant(appointment.status)}`} style={{ fontSize: '0.65rem' }}>
+                                            {getStatusText(appointment.status)}
+                                          </span>
+                                        </div>
+                                        
+                                        <div className="mb-1">
+                                          <small className="text-muted d-block" style={{ fontSize: '0.7rem' }}>
+                                            <i className="bi bi-person me-1"></i>
+                                            {appointment.doctor_name}
+                                          </small>
+                                          <small className="text-muted d-block" style={{ fontSize: '0.7rem' }}>
+                                            <i className="bi bi-geo-alt me-1"></i>
+                                            {appointment.branch_name}
+                                          </small>
+                                        </div>
+                                        
+                                        <div className="mb-2">
+                                          <small className="text-muted d-block mb-1" style={{ fontSize: '0.7rem' }}>Dịch vụ:</small>
+                                          <div className="text-truncate" title={appointment.service_names} style={{ fontSize: '0.7rem' }}>
+                                            {appointment.service_names}
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="d-flex gap-1">
+                                          <Form.Select
+                                            size="sm"
+                                            value={appointment.status}
+                                            onChange={(e) => {
+                                              e.stopPropagation();
+                                              handleStatusChange(appointment.id, e.target.value);
+                                            }}
+                                            className="flex-grow-1"
+                                            style={{ fontSize: '0.7rem' }}
+                                          >
+                                            {['scheduled', 'confirmed', 'arrived', 'in_progress', 'completed', 'cancelled', 'no_show'].map(status => (
+                                              <option key={status} value={status}>{getStatusText(status)}</option>
+                                            ))}
+                                          </Form.Select>
+                                          <Button
+                                            variant="outline-primary"
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleOpenDialog(appointment);
+                                            }}
+                                            style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
+                                          >
+                                            <i className="bi bi-pencil"></i>
+                                          </Button>
+                                          <Button
+                                            variant="outline-danger"
+                                            size="sm"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDelete(appointment.id);
+                                            }}
+                                            style={{ fontSize: '0.7rem', padding: '0.25rem 0.5rem' }}
+                                          >
+                                            <i className="bi bi-trash"></i>
+                                          </Button>
+                                        </div>
                                       </div>
                                     </div>
-                                    
-                                    <div className="d-flex gap-1">
-                                      <Form.Select
-                                        size="sm"
-                                        value={appointment.status}
-                                        onChange={(e) => handleStatusChange(appointment.id, e.target.value)}
-                                        className="flex-grow-1"
-                                        style={{ fontSize: '0.75rem' }}
-                                      >
-                                        {['scheduled', 'confirmed', 'arrived', 'in_progress', 'completed', 'cancelled', 'no_show'].map(status => (
-                                          <option key={status} value={status}>{getStatusText(status)}</option>
-                                        ))}
-                                      </Form.Select>
-                                      <Button
-                                        variant="outline-primary"
-                                        size="sm"
-                                        onClick={() => handleOpenDialog(appointment)}
-                                        style={{ fontSize: '0.75rem' }}
-                                      >
-                                        <i className="bi bi-pencil"></i>
-                                      </Button>
-                                      <Button
-                                        variant="outline-danger"
-                                        size="sm"
-                                        onClick={() => handleDelete(appointment.id)}
-                                        style={{ fontSize: '0.75rem' }}
-                                      >
-                                        <i className="bi bi-trash"></i>
-                                      </Button>
-                                    </div>
                                   </div>
-                                </div>
+                                ))}
                               </div>
-                            ))}
+                            ) : (
+                              <div className="text-center text-muted py-2" style={{ fontSize: '0.8rem' }}>
+                                <i className="bi bi-calendar-x me-1"></i>
+                                Trống
+                              </div>
+                            )}
                           </div>
-                        ) : (
-                          <div className="text-center text-muted py-3">
-                            <i className="bi bi-calendar-x me-2"></i>
-                            Không có lịch hẹn
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
 
               {filteredAppointments.length === 0 && (
                 <div className="text-center py-5">
@@ -792,25 +1124,212 @@ const Appointments: React.FC = () => {
           
           <Form>
             <Row className="g-3">
-              <Col md={6}>
+              <Col md={12}>
                 <Form.Group>
-                  <Form.Label className="fw-semibold">Khách hàng *</Form.Label>
-                  <Form.Select
-                    value={formData.customer}
-                    onChange={(e) => setFormData({ 
-                      ...formData, 
-                      customer: parseInt(e.target.value),
-                      services: []
-                    })}
-                    className="enhanced-form"
-                  >
-                    <option value={0}>Chọn khách hàng</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.full_name} - {customer.phone}
-                      </option>
-                    ))}
-                  </Form.Select>
+                  <Form.Label className="fw-semibold">Loại khách hàng *</Form.Label>
+                  <div className="d-flex gap-3 mb-3">
+                    <Form.Check
+                      type="radio"
+                      id="existing-customer"
+                      name="customerType"
+                      label="Khách hàng có sẵn"
+                      checked={!isNewCustomer}
+                      onChange={() => setIsNewCustomer(false)}
+                    />
+                    <Form.Check
+                      type="radio"
+                      id="new-customer"
+                      name="customerType"
+                      label="Khách hàng mới"
+                      checked={isNewCustomer}
+                      onChange={() => setIsNewCustomer(true)}
+                    />
+                  </div>
+                  
+                  {!isNewCustomer ? (
+                    <Form.Select
+                      value={formData.customer}
+                      onChange={(e) => setFormData({ 
+                        ...formData, 
+                        customer: parseInt(e.target.value),
+                        services: []
+                      })}
+                      className="enhanced-form"
+                    >
+                      <option value={0}>Chọn khách hàng</option>
+                      {customers.map((customer) => (
+                        <option key={customer.id} value={customer.id}>
+                          {customer.full_name} - {customer.phone}
+                        </option>
+                      ))}
+                    </Form.Select>
+                  ) : (
+                    <div className="border rounded p-3 bg-light">
+                      <h6 className="text-primary mb-3">Thông tin khách hàng mới</h6>
+                      <Row className="g-3">
+                        <Col md={6}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Họ *</Form.Label>
+                            <Form.Control
+                              type="text"
+                              value={newCustomerData.last_name}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, last_name: e.target.value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={6}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Tên *</Form.Label>
+                            <Form.Control
+                              type="text"
+                              value={newCustomerData.first_name}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, first_name: e.target.value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={6}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Số điện thoại *</Form.Label>
+                            <Form.Control
+                              type="tel"
+                              value={newCustomerData.phone}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, phone: e.target.value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={6}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Email</Form.Label>
+                            <Form.Control
+                              type="email"
+                              value={newCustomerData.email}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, email: e.target.value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={6}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Giới tính *</Form.Label>
+                            <Form.Select
+                              value={newCustomerData.gender}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, gender: e.target.value as any })}
+                              className="enhanced-form"
+                            >
+                              <option value="male">Nam</option>
+                              <option value="female">Nữ</option>
+                              <option value="other">Khác</option>
+                            </Form.Select>
+                          </Form.Group>
+                        </Col>
+                        <Col md={6}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Ngày sinh *</Form.Label>
+                            <DatePicker
+                              value={newCustomerData.date_of_birth}
+                              onChange={(value) => setNewCustomerData({ ...newCustomerData, date_of_birth: value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={4}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Tỉnh/Thành phố</Form.Label>
+                            <Form.Select
+                              value={newCustomerData.province_code}
+                              onChange={(e) => {
+                                const provinceCode = e.target.value;
+                                setNewCustomerData({ ...newCustomerData, province_code: provinceCode, ward_code: '' });
+                                if (provinceCode) {
+                                  fetchWards(provinceCode);
+                                } else {
+                                  setWards([]);
+                                }
+                              }}
+                              className="enhanced-form"
+                            >
+                              <option value="">Chọn Tỉnh/Thành phố</option>
+                              {provinces
+                                .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+                                .map((province) => (
+                                  <option key={province.code} value={province.code}>
+                                    {province.name}
+                                  </option>
+                                ))}
+                            </Form.Select>
+                          </Form.Group>
+                        </Col>
+                        <Col md={4}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Phường/Xã</Form.Label>
+                            <Form.Select
+                              value={newCustomerData.ward_code}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, ward_code: e.target.value })}
+                              disabled={!newCustomerData.province_code}
+                              className="enhanced-form"
+                            >
+                              <option value="">Chọn Phường/Xã</option>
+                              {wards.map((ward) => (
+                                <option key={ward.code} value={ward.code}>
+                                  {ward.name}
+                                </option>
+                              ))}
+                            </Form.Select>
+                          </Form.Group>
+                        </Col>
+                        <Col md={4}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Số nhà, tên đường</Form.Label>
+                            <Form.Control
+                              type="text"
+                              value={newCustomerData.street}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, street: e.target.value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={12}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Tiền sử bệnh</Form.Label>
+                            <Form.Control
+                              as="textarea"
+                              rows={2}
+                              value={newCustomerData.medical_history}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, medical_history: e.target.value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={12}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Dị ứng</Form.Label>
+                            <Form.Control
+                              as="textarea"
+                              rows={2}
+                              value={newCustomerData.allergies}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, allergies: e.target.value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                        <Col md={12}>
+                          <Form.Group>
+                            <Form.Label className="fw-semibold">Ghi chú</Form.Label>
+                            <Form.Control
+                              as="textarea"
+                              rows={2}
+                              value={newCustomerData.notes}
+                              onChange={(e) => setNewCustomerData({ ...newCustomerData, notes: e.target.value })}
+                              className="enhanced-form"
+                            />
+                          </Form.Group>
+                        </Col>
+                      </Row>
+                    </div>
+                  )}
                 </Form.Group>
               </Col>
               <Col md={6}>
@@ -849,7 +1368,26 @@ const Appointments: React.FC = () => {
               </Col>
               <Col md={6}>
                 <Form.Group>
-                  <Form.Label className="fw-semibold">Dịch vụ *</Form.Label>
+                  <Form.Label className="fw-semibold">Loại lịch hẹn *</Form.Label>
+                  <Form.Select
+                    value={formData.appointment_type}
+                    onChange={(e) => setFormData({ ...formData, appointment_type: e.target.value as any })}
+                    className="enhanced-form"
+                  >
+                    <option value="consultation">Tham khảo dịch vụ</option>
+                    <option value="treatment">Điều trị</option>
+                    <option value="follow_up">Tái khám</option>
+                    <option value="emergency">Cấp cứu</option>
+                  </Form.Select>
+                  <Form.Text className="text-muted">
+                    <i className="bi bi-info-circle me-1"></i>
+                    Chọn loại lịch hẹn phù hợp với mục đích khách hàng đến
+                  </Form.Text>
+                </Form.Group>
+              </Col>
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label className="fw-semibold">Dịch vụ với số lượng *</Form.Label>
                   {editingAppointment ? (
                     <div>
                       <Form.Control
@@ -865,19 +1403,76 @@ const Appointments: React.FC = () => {
                       </Form.Text>
                     </div>
                   ) : (
-                    <Form.Select
-                      multiple
-                      value={formData.services.map(String)}
-                      onChange={handleServiceChange}
-                      className="enhanced-form"
-                      size="sm"
-                    >
-                      {services.map((service) => (
-                        <option key={service.id} value={service.id}>
-                          {service.name}
-                        </option>
-                      ))}
-                    </Form.Select>
+                    <div>
+                      {/* Hiển thị các dịch vụ đã chọn với số lượng */}
+                      {formData.services_with_quantity.map((item, index) => {
+                        const service = services.find(s => s.id === item.service_id);
+                        return service ? (
+                          <div key={index} className="d-flex align-items-center mb-2 p-2 border rounded">
+                            <div className="flex-grow-1">
+                              <strong>{service.name}</strong>
+                              <small className="text-muted d-block">Giá: {formatCurrency(service.price)}</small>
+                            </div>
+                            <div className="d-flex align-items-center">
+                              <Form.Control
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => {
+                                  const newQuantity = parseInt(e.target.value) || 1;
+                                  const updatedServices = [...formData.services_with_quantity];
+                                  updatedServices[index].quantity = newQuantity;
+                                  setFormData({...formData, services_with_quantity: updatedServices});
+                                }}
+                                style={{ width: '80px' }}
+                                className="me-2"
+                              />
+                              <Button
+                                variant="outline-danger"
+                                size="sm"
+                                onClick={() => {
+                                  const updatedServices = formData.services_with_quantity.filter((_, i) => i !== index);
+                                  const updatedServiceIds = updatedServices.map(s => s.service_id);
+                                  setFormData({
+                                    ...formData, 
+                                    services_with_quantity: updatedServices,
+                                    services: updatedServiceIds
+                                  });
+                                }}
+                              >
+                                <i className="bi bi-trash"></i>
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null;
+                      })}
+                      
+                      {/* Dropdown để thêm dịch vụ mới */}
+                      <Form.Select
+                        value=""
+                        onChange={(e) => {
+                          const serviceId = parseInt(e.target.value);
+                          if (serviceId && !formData.services_with_quantity.some(s => s.service_id === serviceId)) {
+                            const newService = { service_id: serviceId, quantity: 1 };
+                            const updatedServices = [...formData.services_with_quantity, newService];
+                            const updatedServiceIds = updatedServices.map(s => s.service_id);
+                            setFormData({
+                              ...formData,
+                              services_with_quantity: updatedServices,
+                              services: updatedServiceIds
+                            });
+                          }
+                        }}
+                        className="enhanced-form"
+                      >
+                        <option value="">Chọn dịch vụ để thêm</option>
+                        {services.filter(service => !formData.services_with_quantity.some(s => s.service_id === service.id)).map((service) => (
+                          <option key={service.id} value={service.id}>
+                            {service.name} - {formatCurrency(service.price)}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    </div>
                   )}
                 </Form.Group>
               </Col>

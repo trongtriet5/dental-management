@@ -185,7 +185,7 @@ class CustomerListSerializer(serializers.ModelSerializer):
         model = Customer
         fields = ['id', 'first_name', 'last_name', 'full_name', 'phone', 'email', 
                  'gender', 'date_of_birth', 'age', 'province_code', 'ward_code', 
-                 'street', 'province_name', 'ward_name', 
+                 'street', 'province_name', 'ward_name', 'status',
                  'branch', 'branch_name', 'created_at']
     
     def get_province_code(self, obj):
