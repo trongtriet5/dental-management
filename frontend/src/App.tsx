@@ -10,6 +10,7 @@ import Financials from './pages/Financials';
 import Reports from './pages/Reports';
 import Profile from './pages/Profile';
 import StaffManagement from './pages/StaffManagement';
+import Services from './pages/Services';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -89,6 +90,14 @@ const AppRoutes: React.FC = () => {
                   element={
                     <RoleRoute roles={['admin', 'manager']}>
                       <StaffManagement />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="/services"
+                  element={
+                    <RoleRoute roles={['admin', 'manager', 'creceptionist']}>
+                      <Services />
                     </RoleRoute>
                   }
                 />

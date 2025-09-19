@@ -200,7 +200,10 @@ const Customers: React.FC = (): JSX.Element => {
       const appointmentPromises = customers.map(async (customer) => {
         try {
           // Load tất cả appointments của customer để có dữ liệu đầy đủ cho filter
-          const appointmentsData = await api.getAppointments({ customer: customer.id, page_size: 100 });
+          const appointmentsData = await api.getAppointments({ 
+            search: `${customer.full_name} ${customer.phone}`, 
+            page_size: 100 
+          });
           
           return {
             customerId: customer.id,
@@ -266,7 +269,13 @@ const Customers: React.FC = (): JSX.Element => {
 
   const fetchCustomerAppointments = async (customerId: number) => {
     try {
-      const appointmentsData = await api.getAppointments({ customer: customerId, page_size: 1 });
+      const customer = customers.find(c => c.id === customerId);
+      if (!customer) return;
+      
+      const appointmentsData = await api.getAppointments({ 
+        search: `${customer.full_name} ${customer.phone}`, 
+        page_size: 1 
+      });
       if (appointmentsData.results && appointmentsData.results.length > 0) {
         const latestAppointment = appointmentsData.results[0];
         setCurrentAppointment(latestAppointment);
@@ -491,6 +500,97 @@ const Customers: React.FC = (): JSX.Element => {
       // Tạo customer first_name và last_name
       const fullName = `${formData.first_name} ${formData.last_name}`.trim();
       
+      // Tự động tạo thanh toán khi thêm khách hàng mới (không phải chỉnh sửa)
+      if (!editingCustomer && selectedServices.length > 0) {
+        try {
+          // Tính tổng giá trị dịch vụ
+          const totalAmount = selectedServices.reduce((total, serviceId) => {
+            const service = services.find(s => s.id === serviceId);
+            return total + (service ? service.price : 0);
+          }, 0);
+          
+          if (totalAmount > 0) {
+            // Tạo thanh toán tự động
+            const paymentData = {
+              customer: saved.id,
+              services: selectedServices,
+              branch: formData.branch,
+              amount: totalAmount,
+              payment_method: 'cash' as const,
+              notes: `Thanh toán tự động khi tạo khách hàng ${fullName}`,
+              status: 'pending' as const,
+              paid_amount: 0
+            };
+            
+            await api.createPayment(paymentData);
+            
+            // Hiển thị thông báo thành công với thông tin thanh toán
+            await Swal.fire({
+              icon: 'success',
+              title: 'Thành công!',
+              html: `
+                <div class="text-start">
+                  <p><strong>Khách hàng:</strong> ${fullName} đã được tạo thành công</p>
+                  <p><strong>Thanh toán:</strong> Đã tự động tạo thanh toán ${formatCurrency(totalAmount)}</p>
+                  <p class="text-muted small mt-2">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Bạn có thể xem và quản lý thanh toán trong trang Thu chi
+                  </p>
+                </div>
+              `,
+              confirmButtonText: 'OK',
+              confirmButtonColor: '#28a745'
+            });
+          } else {
+            // Hiển thị thông báo thành công thông thường
+            await Swal.fire({
+              icon: 'success',
+              title: 'Thành công!',
+              text: `Khách hàng ${fullName} đã được tạo thành công`,
+              confirmButtonText: 'OK',
+              confirmButtonColor: '#28a745'
+            });
+          }
+        } catch (paymentError: any) {
+          console.error('Error creating payment:', paymentError);
+          // Hiển thị thông báo thành công cho khách hàng nhưng cảnh báo về thanh toán
+          await Swal.fire({
+            icon: 'warning',
+            title: 'Khách hàng đã được tạo',
+            html: `
+              <div class="text-start">
+                <p><strong>Khách hàng:</strong> ${fullName} đã được tạo thành công</p>
+                <p class="text-warning"><strong>Cảnh báo:</strong> Không thể tạo thanh toán tự động</p>
+                <p class="text-muted small mt-2">
+                  <i class="bi bi-info-circle me-1"></i>
+                  Bạn có thể tạo thanh toán thủ công trong trang Thu chi
+                </p>
+              </div>
+            `,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#ffc107'
+          });
+        }
+      } else if (editingCustomer) {
+        // Hiển thị thông báo thành công cho việc cập nhật
+        await Swal.fire({
+          icon: 'success',
+          title: 'Thành công!',
+          text: `Khách hàng ${fullName} đã được cập nhật thành công`,
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#28a745'
+        });
+      } else {
+        // Hiển thị thông báo thành công thông thường
+        await Swal.fire({
+          icon: 'success',
+          title: 'Thành công!',
+          text: `Khách hàng ${fullName} đã được tạo thành công`,
+          confirmButtonText: 'OK',
+          confirmButtonColor: '#28a745'
+        });
+      }
+      
       // Không tạo lịch hẹn tự động khi thêm khách hàng
       // Lịch hẹn sẽ được tạo riêng thông qua trang Appointments
       if (false) { // Disabled automatic appointment creation
@@ -533,7 +633,8 @@ const Customers: React.FC = (): JSX.Element => {
           }
           
           const appointmentData = {
-            customer: saved.id,
+            customer_name: saved.full_name,
+            customer_phone: saved.phone,
             doctor: appointmentDoctor || 0,
             branch: formData.branch,
             services: selectedServices,
@@ -557,10 +658,31 @@ const Customers: React.FC = (): JSX.Element => {
             await api.createAppointment(appointmentData);
           }
           
+          // Tạo thanh toán khi khách hàng chấp nhận dịch vụ
+          if (selectedServices.length > 0) {
+            const totalAmount = selectedServices.reduce((total, serviceId) => {
+              const service = services.find(s => s.id === serviceId);
+              return total + (service ? service.price : 0);
+            }, 0);
+
+            if (totalAmount > 0) {
+              const paymentData = {
+                customer: saved.id,
+                services: selectedServices,
+                branch: formData.branch,
+                amount: totalAmount,
+                payment_method: 'cash' as const,
+                notes: 'Thanh toán khi khách hàng chấp nhận dịch vụ'
+              };
+
+              await api.createPayment(paymentData);
+            }
+          }
+
           await Swal.fire({
             icon: 'success',
             title: 'Thành công!',
-            text: `${editingCustomer ? 'Cập nhật' : 'Thêm'} khách hàng: ${fullName} và ${currentAppointment ? 'cập nhật' : 'tạo'} lịch hẹn`,
+            text: `${editingCustomer ? 'Cập nhật' : 'Thêm'} khách hàng: ${fullName}, ${currentAppointment ? 'cập nhật' : 'tạo'} lịch hẹn và tạo thanh toán`,
             confirmButtonText: 'OK',
             confirmButtonColor: '#0d6efd'
           });
@@ -996,7 +1118,10 @@ const Customers: React.FC = (): JSX.Element => {
     <div className="container-fluid p-4">
       {/* Header Section */}
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="text-primary fw-bold mb-0">Quản lý khách hàng</h2>
+        <div>
+          <h2 className="text-primary fw-bold mb-0">Quản lý khách hàng</h2>
+          <p className="text-muted mb-0">Thêm khách hàng sau khi chấp nhận dịch vụ và tạo thanh toán</p>
+        </div>
         <div className="d-flex gap-2">
           <Button
             variant="success"
@@ -1282,7 +1407,7 @@ const Customers: React.FC = (): JSX.Element => {
       <Modal show={showDialog} onHide={handleCloseDialog} size="lg" className="modal-enhanced">
         <Modal.Header closeButton>
           <Modal.Title>
-          {editingCustomer ? 'Chỉnh sửa khách hàng' : 'Thêm khách hàng mới'}
+          {editingCustomer ? 'Chỉnh sửa khách hàng' : 'Thêm khách hàng'}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body className="enhanced-form">
@@ -1854,7 +1979,10 @@ const exportToExcel = async (customers: Customer[], services: Service[], staff: 
       
       // Lấy thông tin lịch hẹn cho khách hàng
       try {
-        const appointmentsData = await api.getAppointments({ customer: customer.id, page_size: 1 });
+        const appointmentsData = await api.getAppointments({ 
+          search: `${customer.full_name} ${customer.phone}`, 
+          page_size: 1 
+        });
         if (appointmentsData.results && appointmentsData.results.length > 0) {
           const latestAppointment = appointmentsData.results[0];
           appointmentDate = formatDate(latestAppointment.appointment_date);

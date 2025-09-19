@@ -24,7 +24,9 @@ class Appointment(models.Model):
         ('emergency', 'Cấp cứu'),
     ]
 
-    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, verbose_name="Khách hàng")
+    # Thông tin khách hàng tạm thời (chỉ để hẹn lịch, không liên kết với hệ thống khách hàng)
+    customer_name = models.CharField(max_length=200, verbose_name="Tên khách hàng", default="Khách hàng chưa xác định")
+    customer_phone = models.CharField(max_length=20, verbose_name="Số điện thoại khách hàng", default="")
     doctor = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -39,7 +41,8 @@ class Appointment(models.Model):
     services_with_quantity = models.JSONField(default=list, blank=True, verbose_name="Dịch vụ với số lượng")
 
     appointment_date = models.DateField(verbose_name="Ngày hẹn")
-    appointment_time = models.TimeField(verbose_name="Giờ hẹn")
+    appointment_time = models.TimeField(verbose_name="Giờ bắt đầu")
+    end_time = models.TimeField(verbose_name="Giờ kết thúc", null=True, blank=True)
     duration_minutes = models.PositiveIntegerField(verbose_name="Thời gian (phút)")
 
     appointment_type = models.CharField(
@@ -49,6 +52,8 @@ class Appointment(models.Model):
         verbose_name="Loại lịch hẹn"
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='scheduled', verbose_name="Trạng thái")
+    is_waitlist = models.BooleanField(default=False, verbose_name="Danh sách chờ")
+    waitlist_position = models.PositiveIntegerField(null=True, blank=True, verbose_name="Vị trí trong danh sách chờ")
     notes = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
 
     # Thông tin hệ thống
@@ -69,7 +74,7 @@ class Appointment(models.Model):
         unique_together = ['doctor', 'appointment_date', 'appointment_time']
 
     def __str__(self):
-        return f"{self.customer.full_name} - {self.appointment_date} {self.appointment_time}"
+        return f"{self.customer_name} - {self.appointment_date} {self.appointment_time}"
 
     @property
     def datetime(self):
@@ -88,6 +93,29 @@ class Appointment(models.Model):
     def is_today(self):
         from django.utils import timezone
         return self.appointment_date == timezone.now().date()
+    
+    def save(self, *args, **kwargs):
+        # Tự động tính toán end_time nếu không được cung cấp
+        if not self.end_time and self.appointment_time and self.duration_minutes:
+            from datetime import datetime, timedelta
+            start_datetime = datetime.combine(self.appointment_date, self.appointment_time)
+            end_datetime = start_datetime + timedelta(minutes=self.duration_minutes)
+            self.end_time = end_datetime.time()
+        super().save(*args, **kwargs)
+    
+    @property
+    def calculated_end_time(self):
+        """Tính toán giờ kết thúc dựa trên giờ bắt đầu và thời gian"""
+        if self.end_time:
+            return self.end_time
+        
+        if self.appointment_time and self.duration_minutes:
+            from datetime import datetime, timedelta
+            start_datetime = datetime.combine(self.appointment_date, self.appointment_time)
+            end_datetime = start_datetime + timedelta(minutes=self.duration_minutes)
+            return end_datetime.time()
+        
+        return None
 
 
 class AppointmentHistory(models.Model):

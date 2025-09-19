@@ -40,12 +40,9 @@ const Financials: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [showAddPaymentModal, setShowAddPaymentModal] = useState(false);
   const [editingPayment, setEditingPayment] = useState<PaymentType | null>(null);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
-  const [selectedPayment, setSelectedPayment] = useState<PaymentType | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [selectedBranch, setSelectedBranch] = useState<number | ''>('');
   const [selectedStartDate, setSelectedStartDate] = useState<string>('');
   const [selectedEndDate, setSelectedEndDate] = useState<string>('');
@@ -102,24 +99,6 @@ const Financials: React.FC = () => {
     setExpenseFormData({ ...expenseFormData, amount: numericValue });
   };
 
-  const handleAddPaymentAmountChange = (value: string) => {
-    // Loại bỏ tất cả ký tự không phải số
-    const numbersOnly = value.replace(/[^\d]/g, '');
-    
-    if (numbersOnly === '') {
-      setAddPaymentAmountDisplay('');
-      setAddPaymentData({ ...addPaymentData, amount: 0 });
-      return;
-    }
-    
-    // Convert thành số và format lại
-    const numericValue = parseFloat(numbersOnly);
-    const formattedValue = numericValue.toLocaleString('vi-VN');
-    
-    setAddPaymentAmountDisplay(formattedValue);
-    setAddPaymentData({ ...addPaymentData, amount: numericValue });
-  };
-
   const [expenseFormData, setExpenseFormData] = useState<{ 
     title: string; 
     description: string; 
@@ -137,14 +116,6 @@ const Financials: React.FC = () => {
   });
 
   const [expenseAmountDisplay, setExpenseAmountDisplay] = useState<string>('');
-
-  const [addPaymentData, setAddPaymentData] = useState({
-    amount: 0,
-    payment_method: 'cash' as const,
-    notes: '',
-  });
-
-  const [addPaymentAmountDisplay, setAddPaymentAmountDisplay] = useState<string>('');
 
   useEffect(() => {
     fetchData();
@@ -173,6 +144,7 @@ const Financials: React.FC = () => {
 
   const fetchData = async () => {
     try {
+      setError(''); // Clear any previous errors
       const [paymentsData, expensesData, customersData, servicesData, branchesData, summaryData] = await Promise.all([
         api.getPayments(),
         api.getExpenses(),
@@ -195,9 +167,6 @@ const Financials: React.FC = () => {
         const firstPayment = paymentsData.results[0];
         console.log('💰 First payment:', firstPayment);
         console.log('💰 Payment amount:', firstPayment.amount, typeof firstPayment.amount);
-        console.log('💰 Payment paid_amount:', firstPayment.paid_amount, typeof firstPayment.paid_amount);
-        console.log('💰 Payment remaining_amount:', firstPayment.remaining_amount, typeof firstPayment.remaining_amount);
-        console.log('💰 Calculated remaining:', Number(firstPayment.amount) - Number(firstPayment.paid_amount));
       }
       if (expensesData.results && expensesData.results.length > 0) {
         console.log('💰 First expense:', expensesData.results[0]);
@@ -212,7 +181,8 @@ const Financials: React.FC = () => {
         console.log('💰 Financials Price value:', servicesData.results[0].price);
       }
     } catch (err: any) {
-      setError('Không thể tải dữ liệu tài chính');
+      console.error('Error fetching data:', err);
+      setError('Không thể tải dữ liệu tài chính: ' + (err.response?.data?.detail || err.message));
     } finally {
       setIsLoading(false);
     }
@@ -271,30 +241,38 @@ const Financials: React.FC = () => {
     setShowExpenseModal(true);
   };
 
-  const handleOpenAddPaymentModal = (payment: PaymentType) => {
-    setSelectedPayment(payment);
-    const remainingAmount = Number(payment.remaining_amount);
-    setAddPaymentData({
-      amount: remainingAmount,
-      payment_method: 'cash',
-      notes: '',
-    });
-    setAddPaymentAmountDisplay(formatCurrencyInput(remainingAmount));
-    setShowAddPaymentModal(true);
-  };
-
   const handleCloseModals = () => {
     setShowPaymentModal(false);
     setShowExpenseModal(false);
-    setShowAddPaymentModal(false);
     setEditingPayment(null);
     setEditingExpense(null);
-    setSelectedPayment(null);
+    setError(''); // Clear any errors when closing modals
   };
 
   const handleSubmitPayment = async () => {
     try {
       console.log('Submitting payment data:', paymentFormData);
+      
+      // Validation
+      if (!paymentFormData.customer || paymentFormData.customer === 0) {
+        setError('Vui lòng chọn khách hàng');
+        return;
+      }
+      
+      if (!paymentFormData.branch || paymentFormData.branch === 0) {
+        setError('Vui lòng chọn chi nhánh');
+        return;
+      }
+      
+      if (!editingPayment && (!paymentFormData.services || paymentFormData.services.length === 0)) {
+        setError('Vui lòng chọn ít nhất một dịch vụ');
+        return;
+      }
+      
+      if (paymentFormData.amount <= 0) {
+        setError('Số tiền phải lớn hơn 0');
+        return;
+      }
       
       if (editingPayment) {
         await api.updatePayment(editingPayment.id, paymentFormData);
@@ -303,14 +281,36 @@ const Financials: React.FC = () => {
       }
       await fetchData();
       handleCloseModals();
+      setError(''); // Clear any previous errors
     } catch (err: any) {
       console.error('Error submitting payment:', err);
-      setError('Không thể lưu thanh toán');
+      setError('Không thể lưu thanh toán: ' + (err.response?.data?.detail || err.message));
     }
   };
 
   const handleSubmitExpense = async () => {
     try {
+      // Validation
+      if (!expenseFormData.title.trim()) {
+        setError('Vui lòng nhập tiêu đề');
+        return;
+      }
+      
+      if (!expenseFormData.branch || expenseFormData.branch === 0) {
+        setError('Vui lòng chọn chi nhánh');
+        return;
+      }
+      
+      if (expenseFormData.amount <= 0) {
+        setError('Số tiền phải lớn hơn 0');
+        return;
+      }
+      
+      if (!expenseFormData.expense_date) {
+        setError('Vui lòng chọn ngày chi');
+        return;
+      }
+      
       const submitData = {
         ...expenseFormData,
         expense_date: expenseFormData.expense_date // Giữ nguyên format YYYY-MM-DD
@@ -329,22 +329,11 @@ const Financials: React.FC = () => {
       }
       await fetchData();
       handleCloseModals();
+      setError(''); // Clear any previous errors
     } catch (err: any) {
       console.error('Error submitting expense:', err);
       console.error('Error details:', err.response?.data);
       setError('Không thể lưu chi phí: ' + (err.response?.data?.detail || err.message));
-    }
-  };
-
-  const handleAddPayment = async () => {
-    if (!selectedPayment) return;
-    
-    try {
-      await api.addPayment(selectedPayment.id, addPaymentData.amount, addPaymentData.payment_method, addPaymentData.notes);
-      await fetchData();
-      handleCloseModals();
-    } catch (err: any) {
-      setError('Không thể thêm thanh toán');
     }
   };
 
@@ -353,8 +342,10 @@ const Financials: React.FC = () => {
       try {
         await api.deletePayment(id);
         await fetchData();
+        setError(''); // Clear any previous errors
       } catch (err: any) {
-        setError('Không thể xóa thanh toán');
+        console.error('Error deleting payment:', err);
+        setError('Không thể xóa thanh toán: ' + (err.response?.data?.detail || err.message));
       }
     }
   };
@@ -364,8 +355,10 @@ const Financials: React.FC = () => {
       try {
         await api.deleteExpense(id);
         await fetchData();
+        setError(''); // Clear any previous errors
       } catch (err: any) {
-        setError('Không thể xóa chi phí');
+        console.error('Error deleting expense:', err);
+        setError('Không thể xóa chi phí: ' + (err.response?.data?.detail || err.message));
       }
     }
   };
@@ -405,39 +398,6 @@ const Financials: React.FC = () => {
     }
   };
 
-  const getStatusVariant = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'warning';
-      case 'paid':
-        return 'success';
-      case 'partial':
-        return 'info';
-      case 'refunded':
-        return 'secondary';
-      case 'cancelled':
-        return 'danger';
-      default:
-        return 'secondary';
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending':
-        return 'Chờ thanh toán';
-      case 'paid':
-        return 'Đã thanh toán';
-      case 'partial':
-        return 'Thanh toán một phần';
-      case 'refunded':
-        return 'Đã hoàn tiền';
-      case 'cancelled':
-        return 'Đã hủy';
-      default:
-        return status;
-    }
-  };
 
   const getCategoryText = (category: string) => {
     switch (category) {
@@ -463,7 +423,6 @@ const Financials: React.FC = () => {
   const filteredPayments = payments.filter(payment => {
     const matchesSearch = (payment.customer_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (payment.services_names?.join(', ').toLowerCase() || '').includes(searchTerm.toLowerCase());
-    const matchesStatus = !selectedStatus || payment.status === selectedStatus;
     const matchesBranch = !selectedBranch || payment.branch === selectedBranch;
     
     // Filter by date range
@@ -486,7 +445,7 @@ const Financials: React.FC = () => {
       }
     }
     
-    return matchesSearch && matchesStatus && matchesBranch && matchesDateRange;
+    return matchesSearch && matchesBranch && matchesDateRange;
   });
 
   const filteredExpenses = expenses.filter(expense => {
@@ -512,12 +471,15 @@ const Financials: React.FC = () => {
     <div className="container-fluid p-4">
       {/* Header Section */}
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="text-primary fw-bold mb-0">Quản lý thu chi</h2>
+        <div>
+          <h2 className="text-primary fw-bold mb-0">Quản lý thu chi</h2>
+          <p className="text-muted mb-0">Quản lý thanh toán và chi phí của phòng khám</p>
+        </div>
         <div className="d-flex gap-2">
           <Button
-            variant="success"
-            className="btn-success-enhanced"
-            onClick={() => setShowAddPaymentModal(true)}
+            variant="primary"
+            className="btn-primary-enhanced"
+            onClick={() => handleOpenPaymentModal()}
           >
             <i className="bi bi-plus-circle me-2"></i>
             Thêm thanh toán
@@ -535,7 +497,6 @@ const Financials: React.FC = () => {
             className="btn-outline-enhanced"
             onClick={() => {
               const params: any = {};
-              if (selectedStatus) params.status = selectedStatus;
               if (selectedBranch) params.branch = selectedBranch;
               if (selectedStartDate) params.start_date = selectedStartDate;
               if (selectedEndDate) params.end_date = selectedEndDate;
@@ -666,7 +627,7 @@ const Financials: React.FC = () => {
       )}
 
       {/* Tabs */}
-      <Card>
+      <Card className="card-enhanced">
         <Card.Header className="bg-light">
           <div className="d-flex justify-content-between align-items-center">
             <Nav variant="pills" activeKey={activeTab} onSelect={(k) => setActiveTab(k || 'payments')}>
@@ -682,11 +643,6 @@ const Financials: React.FC = () => {
               </Nav.Item>
             </Nav>
             <div>
-              {activeTab === 'payments' && (
-                <Button variant="primary" size="sm" onClick={() => handleOpenPaymentModal()}>
-                  <i className="bi bi-plus me-1"></i>Thêm thanh toán
-                </Button>
-              )}
               {activeTab === 'expenses' && (
                 <Button variant="primary" size="sm" onClick={() => handleOpenExpenseModal()}>
                   <i className="bi bi-plus me-1"></i>Thêm chi phí
@@ -714,19 +670,6 @@ const Financials: React.FC = () => {
                   onChange={(e) => setSearchTerm(e.target.value)}
                           />
                         </InputGroup>
-                      </Col>
-                      <Col xs={12} sm={3}>
-                        <FormSelect
-                    value={selectedStatus}
-                    onChange={(e) => setSelectedStatus(e.target.value)}
-                        >
-                          <option value="">Tất cả trạng thái</option>
-                          <option value="pending">Chờ thanh toán</option>
-                          <option value="paid">Đã thanh toán</option>
-                          <option value="partial">Thanh toán một phần</option>
-                          <option value="refunded">Đã hoàn tiền</option>
-                          <option value="cancelled">Đã hủy</option>
-                        </FormSelect>
                       </Col>
                       <Col xs={12} sm={3}>
                         <FormSelect
@@ -762,16 +705,13 @@ const Financials: React.FC = () => {
                 </Card>
 
           {/* Payments Table */}
-                <Table responsive striped hover className="table-enhanced">
+                <Table responsive className="table-enhanced mb-0">
                   <thead>
                     <tr>
                       <th>ID Khách hàng</th>
                       <th>Khách hàng</th>
                       <th>Dịch vụ</th>
                       <th>Số tiền</th>
-                      <th>Đã trả</th>
-                      <th>Còn lại</th>
-                      <th>Trạng thái</th>
                       <th>Phương thức</th>
                       <th>Ngày tạo</th>
                       <th className="text-end">Thao tác</th>
@@ -784,13 +724,6 @@ const Financials: React.FC = () => {
                         <td>{payment.customer_name}</td>
                         <td>{payment.services_names?.join(', ') || 'Không có dịch vụ'}</td>
                         <td>{formatCurrency(payment.amount)}</td>
-                        <td>{formatCurrency(payment.paid_amount)}</td>
-                        <td>{formatCurrency(payment.remaining_amount)}</td>
-                        <td>
-                          <Badge bg={getStatusVariant(payment.status)}>
-                            {getStatusText(payment.status)}
-                          </Badge>
-                        </td>
                         <td>{payment.payment_method}</td>
                         <td>{(() => {
                           try {
@@ -810,11 +743,6 @@ const Financials: React.FC = () => {
                           <Button variant="outline-primary" size="sm" className="me-1" onClick={() => handleOpenPaymentModal(payment)}>
                             <i className="bi bi-pencil"></i>
                           </Button>
-                      {Number(payment.remaining_amount) > 0 && (
-                            <Button variant="outline-success" size="sm" className="me-1" onClick={() => handleOpenAddPaymentModal(payment)}>
-                              <i className="bi bi-plus-circle"></i>
-                            </Button>
-                          )}
                           <Button variant="outline-danger" size="sm" onClick={() => handleDeletePayment(payment.id)}>
                             <i className="bi bi-trash"></i>
                           </Button>
@@ -829,7 +757,7 @@ const Financials: React.FC = () => {
               <Tab.Pane eventKey="expenses">
 
           {/* Expenses Table */}
-                <Table responsive striped hover className="table-enhanced">
+                <Table responsive className="table-enhanced mb-0">
                   <thead>
                     <tr>
                       <th>Tiêu đề</th>
@@ -1108,69 +1036,6 @@ const Financials: React.FC = () => {
           <Button variant="primary" onClick={handleSubmitExpense}>
             {editingExpense ? 'Cập nhật' : 'Thêm'}
           </Button>
-        </Modal.Footer>
-      </Modal>
-
-      {/* Add Payment Modal */}
-      <Modal show={showAddPaymentModal} onHide={handleCloseModals} className="modal-enhanced">
-        <Modal.Header closeButton>
-          <Modal.Title>Thêm thanh toán cho {selectedPayment?.customer_name}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Row className="g-3">
-            <Col xs={12}>
-              <p className="text-muted">
-                  Số tiền còn lại: {selectedPayment ? formatCurrency(selectedPayment.remaining_amount) : ''}
-              </p>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Form.Group>
-                <Form.Label>Số tiền *</Form.Label>
-                <InputGroup>
-                  <Form.Control
-                    type="text"
-                    value={addPaymentAmountDisplay}
-                    onChange={(e) => handleAddPaymentAmountChange(e.target.value)}
-                    placeholder="Nhập số tiền"
-                  />
-                  <InputGroup.Text>đ</InputGroup.Text>
-                </InputGroup>
-                <Form.Text className="text-muted">
-                  Ví dụ: 1,000,000đ
-                </Form.Text>
-              </Form.Group>
-            </Col>
-            <Col xs={12} sm={6}>
-              <Form.Group>
-                <Form.Label>Phương thức thanh toán *</Form.Label>
-                <FormSelect
-                    value={addPaymentData.payment_method}
-                    onChange={(e) => setAddPaymentData({ ...addPaymentData, payment_method: e.target.value as any })}
-                >
-                  <option value="cash">Tiền mặt</option>
-                  <option value="card">Thẻ</option>
-                  <option value="bank_transfer">Chuyển khoản</option>
-                  <option value="insurance">Bảo hiểm</option>
-                  <option value="other">Khác</option>
-                </FormSelect>
-              </Form.Group>
-            </Col>
-            <Col xs={12}>
-              <Form.Group>
-                <Form.Label>Ghi chú</Form.Label>
-                <Form.Control
-                  as="textarea"
-                  rows={2}
-                  value={addPaymentData.notes}
-                  onChange={(e) => setAddPaymentData({ ...addPaymentData, notes: e.target.value })}
-                />
-              </Form.Group>
-            </Col>
-          </Row>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={handleCloseModals}>Hủy</Button>
-          <Button variant="primary" onClick={handleAddPayment}>Thêm thanh toán</Button>
         </Modal.Footer>
       </Modal>
     </div>

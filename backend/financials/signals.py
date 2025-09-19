@@ -77,15 +77,10 @@ def create_payment_for_appointment_services(sender, instance, action, pk_set, **
                 
                 payment = Payment.objects.create(
                     customer=instance.customer,
-                    appointment=instance,
                     branch=instance.branch,
                     amount=total_amount,
-                    paid_amount=0,
                     payment_method='cash',  # Mặc định tiền mặt
-                    status='pending',  # Mặc định chờ thanh toán
-                    payment_date=None,
-                    notes=f'Tự động tạo từ lịch hẹn {instance.id}',
-                    created_by=instance.created_by
+                    notes=f'Tự động tạo từ lịch hẹn {instance.id}'
                 )
                 
                 # Thêm tất cả services vào payment

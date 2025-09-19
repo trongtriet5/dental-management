@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Container, 
   Row, 
@@ -16,29 +16,13 @@ import {
   OverlayTrigger,
   Tooltip
 } from 'react-bootstrap';
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as ChartTooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
-} from 'recharts';
 import dayjs from 'dayjs';
 import 'dayjs/locale/vi';
 import api from '../services/api';
 import { FinancialSummary, DashboardStats } from '../types';
 import DatePicker from '../components/DatePicker';
 import { formatCurrency } from '../utils/currency';
-
-// Chart colors for pie chart
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
+import { RevenueChart, AppointmentsChart, ServiceDistributionChart } from '../components/ChartComponents';
 
 const Reports: React.FC = () => {
   const [financialSummary, setFinancialSummary] = useState<FinancialSummary | null>(null);
@@ -50,40 +34,84 @@ const Reports: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [startDate, setStartDate] = useState(dayjs().subtract(30, 'day').format('YYYY-MM-DD'));
   const [endDate, setEndDate] = useState(dayjs().format('YYYY-MM-DD'));
+  
+  // Cache for API responses
+  const [dataCache, setDataCache] = useState<{[key: string]: any}>({});
 
   useEffect(() => {
     fetchReportData();
   }, [startDate, endDate]);
 
-  const fetchReportData = async () => {
+  const fetchReportData = useCallback(async () => {
     try {
-      const [summaryData, revenueData, weeklyData, distributionData] = await Promise.all([
+      setIsLoading(true);
+      setError('');
+      
+      // Create cache key based on date range
+      const cacheKey = `${startDate}-${endDate}`;
+      
+      // Check if data is already cached
+      if (dataCache[cacheKey]) {
+        const cachedData = dataCache[cacheKey];
+        setFinancialSummary(cachedData.financialSummary);
+        setRevenueByService(cachedData.revenueByService);
+        setWeeklyAppointments(cachedData.weeklyAppointments);
+        setServiceDistribution(cachedData.serviceDistribution);
+        setDashboardStats(cachedData.dashboardStats);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Fetch data in parallel with better error handling
+      const [summaryData, revenueData, weeklyData, distributionData] = await Promise.allSettled([
         api.getFinancialSummary(startDate, endDate),
         api.getRevenueByService(startDate, endDate),
         api.getWeeklyAppointments(),
         api.getServiceDistribution(),
       ]);
-      setFinancialSummary(summaryData);
-      setRevenueByService(revenueData);
-      setWeeklyAppointments(weeklyData);
-      setServiceDistribution(distributionData);
       
-      // Tạo mock data cho dashboard stats thay vì gọi API
-      setDashboardStats({
-        total_customers: summaryData.total_customers || 0,
+      // Process results
+      const financialSummary = summaryData.status === 'fulfilled' ? summaryData.value : null;
+      const revenueByService = revenueData.status === 'fulfilled' ? revenueData.value : [];
+      const weeklyAppointments = weeklyData.status === 'fulfilled' ? weeklyData.value : [];
+      const serviceDistribution = distributionData.status === 'fulfilled' ? distributionData.value : [];
+      
+      // Create dashboard stats from financial summary
+      const dashboardStats = financialSummary ? {
+        total_customers: financialSummary.total_customers || 0,
         total_appointments: 0,
-        today_appointments: summaryData.today_appointments || 0,
-        this_month_revenue: summaryData.total_revenue || 0,
-        this_month_expenses: summaryData.total_expenses || 0,
-        pending_payments: summaryData.pending_payments || 0,
-      });
+        today_appointments: financialSummary.today_appointments || 0,
+        this_month_revenue: financialSummary.total_revenue || 0,
+        this_month_expenses: financialSummary.total_expenses || 0,
+        pending_payments: financialSummary.pending_payments || 0,
+      } : null;
+      
+      // Update state
+      setFinancialSummary(financialSummary);
+      setRevenueByService(revenueByService);
+      setWeeklyAppointments(weeklyAppointments);
+      setServiceDistribution(serviceDistribution);
+      setDashboardStats(dashboardStats);
+      
+      // Cache the data
+      setDataCache(prev => ({
+        ...prev,
+        [cacheKey]: {
+          financialSummary,
+          revenueByService,
+          weeklyAppointments,
+          serviceDistribution,
+          dashboardStats
+        }
+      }));
+      
     } catch (err: any) {
       console.error('Error fetching report data:', err);
       setError('Không thể tải dữ liệu báo cáo');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [startDate, endDate, dataCache]);
 
   const handleDateRangeChange = () => {
     fetchReportData();
@@ -107,7 +135,7 @@ const Reports: React.FC = () => {
     api.exportGeneratedReportPdf(reportId);
   };
 
-  const getRevenueChartData = () => {
+  const getRevenueChartData = useMemo(() => {
     // Use actual financial summary data
     if (!financialSummary) return [];
     
@@ -116,12 +144,12 @@ const Reports: React.FC = () => {
       revenue: financialSummary.total_revenue,
       expenses: financialSummary.total_expenses,
     }];
-  };
+  }, [financialSummary]);
 
-  const getAppointmentChartData = () => {
+  const getAppointmentChartData = useMemo(() => {
     // Use actual weekly appointments data
     return weeklyAppointments || [];
-  };
+  }, [weeklyAppointments]);
 
   if (isLoading) {
     return (
@@ -139,7 +167,10 @@ const Reports: React.FC = () => {
     <div className="container-fluid p-4">
       {/* Header Section */}
       <div className="d-flex justify-content-between align-items-center mb-4">
-        <h2 className="text-primary fw-bold mb-0">Báo cáo thống kê</h2>
+        <div>
+          <h2 className="text-primary fw-bold mb-0">Báo cáo thống kê</h2>
+          <p className="text-muted mb-0">Thống kê và báo cáo tài chính của phòng khám</p>
+        </div>
         <div className="d-flex gap-2">
           <Button
             variant="success"
@@ -323,16 +354,7 @@ const Reports: React.FC = () => {
               <h5 className="mb-0">Biểu đồ doanh thu và chi phí</h5>
             </Card.Header>
             <Card.Body>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={getRevenueChartData()}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <ChartTooltip formatter={(value) => [formatCurrency(Number(value)), 'VNĐ']} />
-                  <Line type="monotone" dataKey="revenue" stroke="#8884d8" strokeWidth={2} />
-                  <Line type="monotone" dataKey="expenses" stroke="#82ca9d" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
+              <RevenueChart data={getRevenueChartData} />
             </Card.Body>
           </Card>
         </Col>
@@ -344,16 +366,7 @@ const Reports: React.FC = () => {
               <h5 className="mb-0">Lịch hẹn tuần này</h5>
             </Card.Header>
             <Card.Body>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={getAppointmentChartData()}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <ChartTooltip />
-                  <Bar dataKey="appointments" fill="#8884d8" />
-                  <Bar dataKey="completed" fill="#82ca9d" />
-                </BarChart>
-              </ResponsiveContainer>
+              <AppointmentsChart data={getAppointmentChartData} />
             </Card.Body>
           </Card>
         </Col>
@@ -365,7 +378,7 @@ const Reports: React.FC = () => {
               <h5 className="mb-0">Doanh thu theo dịch vụ</h5>
             </Card.Header>
             <Card.Body className="p-0">
-              <Table responsive striped hover>
+              <Table responsive className="table-enhanced mb-0">
                 <thead>
                   <tr>
                     <th>Dịch vụ</th>
@@ -404,25 +417,7 @@ const Reports: React.FC = () => {
               <h5 className="mb-0">Phân bố dịch vụ</h5>
             </Card.Header>
             <Card.Body>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={serviceDistribution}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ service_name, usage_count }) => `${service_name}: ${usage_count}`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="usage_count"
-                  >
-                    {serviceDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <ChartTooltip formatter={(value: any) => [`${value} lần sử dụng`, 'Số lượng']} />
-                </PieChart>
-              </ResponsiveContainer>
+              <ServiceDistributionChart data={serviceDistribution} />
             </Card.Body>
           </Card>
         </Col>

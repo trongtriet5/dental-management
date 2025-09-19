@@ -23,20 +23,20 @@ class CustomerAdmin(admin.ModelAdmin):
             'fields': ('first_name', 'last_name', 'phone', 'email', 'gender', 'date_of_birth')
         }),
         ('Địa chỉ', {
-            'fields': ('province', 'ward', 'street', 'address_old')
+            'fields': ('province', 'ward', 'street')
         }),
         ('Thông tin y tế', {
             'fields': ('medical_history', 'allergies', 'notes')
         }),
         ('Thông tin hệ thống', {
-            'fields': ('branch', 'services_used', 'created_by', 'created_at', 'updated_at')
+            'fields': ('branch', 'services_used', 'created_at', 'updated_at')
         }),
     )
 
 
 @admin.register(Service)
 class ServiceAdmin(admin.ModelAdmin):
-    list_display = ('name', 'price', 'duration_minutes', 'is_active', 'created_at')
+    list_display = ('name', 'price', 'is_active', 'created_at')
     list_filter = ('is_active', 'created_at')
     search_fields = ('name', 'description')
     ordering = ('name',)

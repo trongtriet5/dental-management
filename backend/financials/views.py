@@ -6,8 +6,8 @@ from django.db.models import Sum, Q, F, DecimalField, Value, Count
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import datetime, date, timedelta
-from .models import Payment, Expense, PaymentHistory
-from .serializers import (PaymentSerializer, PaymentListSerializer, PaymentHistorySerializer,
+from .models import Payment, Expense
+from .serializers import (PaymentSerializer, PaymentListSerializer,
                          ExpenseSerializer, ExpenseListSerializer, FinancialSummarySerializer)
 from django.http import HttpResponse
 import io
@@ -21,9 +21,9 @@ class PaymentListCreateView(generics.ListCreateAPIView):
     queryset = Payment.objects.all()
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['status', 'payment_method', 'branch', 'created_at', 'payment_date']
+    filterset_fields = ['payment_method', 'branch', 'created_at']
     search_fields = ['customer__first_name', 'customer__last_name', 'customer__phone']
-    ordering_fields = ['amount', 'created_at', 'payment_date']
+    ordering_fields = ['amount', 'created_at']
     ordering = ['-created_at']
     
     def get_serializer_class(self):
@@ -62,65 +62,6 @@ class ExpenseDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
 
-@api_view(['POST'])
-@permission_classes([permissions.IsAuthenticated])
-def add_payment(request, pk):
-    """Add payment to existing payment record"""
-    try:
-        payment = Payment.objects.get(pk=pk)
-        amount = request.data.get('amount')
-        payment_method = request.data.get('payment_method')
-        notes = request.data.get('notes', '')
-        
-        if not amount or amount <= 0:
-            return Response(
-                {'error': 'Invalid amount'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Create payment history
-        PaymentHistory.objects.create(
-            payment=payment,
-            amount=amount,
-            payment_method=payment_method,
-            notes=notes,
-            created_by=request.user
-        )
-        
-        # Update payment
-        payment.paid_amount += amount
-        if payment.paid_amount >= payment.amount:
-            payment.status = 'paid'
-        else:
-            payment.status = 'partial'
-        payment.save()
-        
-        serializer = PaymentSerializer(payment)
-        return Response(serializer.data)
-        
-    except Payment.DoesNotExist:
-        return Response(
-            {'error': 'Payment not found'}, 
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-
-@api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
-def payment_history(request, pk):
-    """Get payment history"""
-    try:
-        payment = Payment.objects.get(pk=pk)
-        history = payment.payment_history.all()
-        serializer = PaymentHistorySerializer(history, many=True)
-        return Response(serializer.data)
-    except Payment.DoesNotExist:
-        return Response(
-            {'error': 'Payment not found'}, 
-            status=status.HTTP_404_NOT_FOUND
-        )
-
-
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def financial_summary(request):
@@ -135,6 +76,23 @@ def financial_summary(request):
         today = timezone.now().date()
         start_date = today.replace(day=1)  # placeholder to satisfy types below
         end_date = today
+    else:
+        # Validate date range: end_date must be greater than or equal to start_date
+        if start_date and end_date:
+            try:
+                start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+                end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+                
+                if end_date_obj < start_date_obj:
+                    return Response(
+                        {'error': 'Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu'}, 
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except ValueError:
+                return Response(
+                    {'error': 'Định dạng ngày không hợp lệ'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
     
     # Convert string dates to date objects
     if isinstance(start_date, str):
@@ -143,31 +101,21 @@ def financial_summary(request):
         end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
     
     # Calculate revenue
-    # Treat revenue as cash-based: sum of paid_amount (by payment_date if available, fallback to created_at)
+    # Since payments are now simple (no partial payments), revenue = sum of all payment amounts
     payments_qs = Payment.objects.all()
     if not filter_all:
-        payments_qs = payments_qs.filter(
-            Q(payment_date__range=[start_date, end_date]) |
-            (Q(payment_date__isnull=True) & Q(created_at__date__range=[start_date, end_date]))
-        )
+        payments_qs = payments_qs.filter(created_at__date__range=[start_date, end_date])
     
-    # Total revenue = actual paid amount (cash-based accounting)
+    # Total revenue = sum of all payment amounts
     total_revenue = payments_qs.aggregate(
-        total=Coalesce(Sum('paid_amount'), Value(0, output_field=DecimalField()))
-    )['total'] or 0
-    
-    # Total quoted amount (orders) in period for context
-    total_quoted_amount = payments_qs.aggregate(
         total=Coalesce(Sum('amount'), Value(0, output_field=DecimalField()))
     )['total'] or 0
-    # Pending equals sum of remaining_amount for pending/partial in period
-    pending_base = payments_qs.filter(status__in=['pending', 'partial'])
-    pending_payments = pending_base.aggregate(
-        total=Coalesce(
-            Sum(F('amount') - F('paid_amount'), output_field=DecimalField()),
-            Value(0, output_field=DecimalField())
-        )
-    )['total'] or 0
+    
+    # Total quoted amount (same as revenue since no partial payments)
+    total_quoted_amount = total_revenue
+    
+    # No pending payments since all payments are complete
+    pending_payments = 0
     
     # Calculate expenses
     expenses_qs = Expense.objects.all()
@@ -220,34 +168,31 @@ def revenue_by_service(request):
     
     from customers.models import Service
     
-    services = Service.objects.all()
+    # Optimize query with select_related and prefetch_related
+    services = Service.objects.all().only('id', 'name', 'price')
     revenue_data = []
     
     for service in services:
-        # Lấy tất cả payments có chứa service này trong khoảng thời gian
+        # Optimize payment query with prefetch_related
         payments_with_service = Payment.objects.filter(
             services=service,
             created_at__date__range=[start_date, end_date]
-        ).prefetch_related('services')
+        ).select_related('customer', 'branch').prefetch_related('services')
         
         total_service_amount = 0
         paid_service_amount = 0
         
         for payment in payments_with_service:
-            # Tính tỷ lệ của service này trong payment dựa trên giá của từng service
+            # Calculate service ratio more efficiently
             payment_services = payment.services.all()
             total_service_price = sum(s.price for s in payment_services)
             
             if total_service_price > 0:
-                # Tính tỷ lệ của service này trong payment
                 service_ratio = service.price / total_service_price
-                
-                # Tính số tiền tương ứng với service này
                 service_amount = payment.amount * service_ratio
-                service_paid_amount = payment.paid_amount * service_ratio
                 
                 total_service_amount += service_amount
-                paid_service_amount += service_paid_amount
+                paid_service_amount += service_amount
         
         revenue_data.append({
             'service_name': service.name,
@@ -302,7 +247,8 @@ def service_distribution(request):
     """Get service distribution (count of services used)"""
     from customers.models import Service
     
-    services = Service.objects.all()
+    # Optimize query with only necessary fields
+    services = Service.objects.all().only('id', 'name')
     distribution_data = []
     
     for service in services:
@@ -333,24 +279,17 @@ def financial_stats(request):
         'total_expenses': Expense.objects.aggregate(
             total=Coalesce(Sum('amount'), Value(0, output_field=DecimalField()))
         )['total'] or 0,
-        # Cash-based revenue this month (prefer payment_date)
+        # Cash-based revenue this month
         'this_month_revenue': Payment.objects.filter(
-            Q(payment_date__gte=this_month) | (Q(payment_date__isnull=True) & Q(created_at__date__gte=this_month))
-        ).aggregate(total=Coalesce(Sum('paid_amount'), Value(0, output_field=DecimalField())))['total'] or 0,
+            created_at__date__gte=this_month
+        ).aggregate(total=Coalesce(Sum('amount'), Value(0, output_field=DecimalField())))['total'] or 0,
         'this_month_expenses': Expense.objects.filter(
             expense_date__gte=this_month
         ).aggregate(total=Coalesce(Sum('amount'), Value(0, output_field=DecimalField())))['total'] or 0,
-        'pending_payments': Payment.objects.filter(
-            status__in=['pending', 'partial']
-        ).aggregate(
-            total=Coalesce(
-                Sum(F('amount') - F('paid_amount'), output_field=DecimalField()),
-                Value(0, output_field=DecimalField())
-            )
-        )['total'] or 0,
+        'pending_payments': 0,  # No pending payments since all are complete
         'paid_payments': Payment.objects.filter(
-            status='paid'
-        ).aggregate(total=Coalesce(Sum('paid_amount'), Value(0, output_field=DecimalField())))['total'] or 0,
+            created_at__date__gte=this_month
+        ).aggregate(total=Coalesce(Sum('amount'), Value(0, output_field=DecimalField())))['total'] or 0,
     }
     
     return Response(stats)
@@ -361,13 +300,10 @@ def financial_stats(request):
 def export_payments_excel(request):
     # Filter payments
     payments_queryset = Payment.objects.all()
-    status_param = request.GET.get('status')
     branch = request.GET.get('branch')
     start_date = request.GET.get('start_date')
     end_date = request.GET.get('end_date')
     
-    if status_param:
-        payments_queryset = payments_queryset.filter(status=status_param)
     if branch:
         payments_queryset = payments_queryset.filter(branch_id=branch)
     if start_date and end_date:
@@ -396,9 +332,9 @@ def export_payments_excel(request):
             services_names,
             p.branch.name,
             int(p.amount),
-            int(p.paid_amount),
-            int(p.remaining_amount),
-            p.get_status_display(),
+            int(p.amount),  # paid_amount = amount since all payments are complete
+            0,  # remaining_amount = 0 since all payments are complete
+            'Hoàn thành',  # status is always complete
             p.get_payment_method_display(),
             p.created_at.strftime('%d/%m/%Y'),
         ])
@@ -431,10 +367,7 @@ def export_payments_excel(request):
 @permission_classes([permissions.IsAuthenticated])
 def export_payments_pdf(request):
     queryset = Payment.objects.all()
-    status_param = request.GET.get('status')
     branch = request.GET.get('branch')
-    if status_param:
-        queryset = queryset.filter(status=status_param)
     if branch:
         queryset = queryset.filter(branch_id=branch)
 
@@ -451,7 +384,7 @@ def export_payments_pdf(request):
     p.setFont('Helvetica', 10)
     for r in queryset.select_related('customer', 'branch').prefetch_related('services'):
         services_names = ', '.join([service.name for service in r.services.all()])
-        row = f"{r.customer.full_name} | {services_names} | {int(r.amount):,} | {int(r.paid_amount):,} | {int(r.remaining_amount):,} | {r.status} | {r.branch.name}"
+        row = f"{r.customer.full_name} | {services_names} | {int(r.amount):,} | {int(r.amount):,} | 0 | Hoàn thành | {r.branch.name}"
         p.drawString(50, y, row)
         y -= 14
         if y < 50:

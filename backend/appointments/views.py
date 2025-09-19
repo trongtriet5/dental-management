@@ -37,8 +37,8 @@ class AppointmentListCreateView(generics.ListCreateAPIView):
     queryset = Appointment.objects.prefetch_related('services').all()
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['status', 'doctor', 'branch', 'appointment_date', 'customer', 'appointment_time']
-    search_fields = ['customer__first_name', 'customer__last_name', 'customer__phone']
+    filterset_fields = ['status', 'doctor', 'branch', 'appointment_date', 'appointment_time']
+    search_fields = ['customer_name', 'customer_phone']
     ordering_fields = ['appointment_date', 'appointment_time', 'created_at']
     ordering = ['-appointment_date', '-appointment_time']
     
@@ -85,6 +85,17 @@ def appointment_calendar(request):
     end_date = request.GET.get('end_date')
     doctor_id = request.GET.get('doctor_id')
     branch_id = request.GET.get('branch_id')
+    
+    # Validate date range: end_date must be greater than or equal to start_date
+    if start_date and end_date:
+        parsed_start_date = parse_date_string(start_date)
+        parsed_end_date = parse_date_string(end_date)
+        
+        if parsed_start_date and parsed_end_date and parsed_end_date < parsed_start_date:
+            return Response(
+                {'error': 'Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
     
     queryset = Appointment.objects.prefetch_related('services').all()
     
@@ -283,7 +294,7 @@ def check_appointment_availability(request):
                     'id': existing_appointment.id,
                     'time': existing_appointment.appointment_time.strftime('%H:%M'),
                     'duration': existing_appointment.duration_minutes,
-                    'customer': existing_appointment.customer.full_name,
+                    'customer': existing_appointment.customer_name,
                     'status': existing_appointment.get_status_display(),
                     'services': [service.name for service in existing_appointment.services.all()]
                 })
@@ -326,6 +337,18 @@ def export_appointments_excel(request):
     branch = request.GET.get('branch')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
+    
+    # Validate date range: date_to must be greater than or equal to date_from
+    if date_from and date_to:
+        parsed_date_from = parse_date_string(date_from)
+        parsed_date_to = parse_date_string(date_to)
+        
+        if parsed_date_from and parsed_date_to and parsed_date_to < parsed_date_from:
+            return Response(
+                {'error': 'Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
     if status_param:
         queryset = queryset.filter(status=status_param)
     if doctor:
@@ -349,7 +372,7 @@ def export_appointments_excel(request):
     for a in queryset.select_related('customer', 'doctor', 'branch'):
         ws.append([
             a.id,
-            a.customer.full_name,
+            a.customer_name,
             a.doctor.get_full_name(),
             ", ".join([s.name for s in a.services.all()]),
             a.branch.name,
@@ -378,6 +401,18 @@ def export_appointments_pdf(request):
     branch = request.GET.get('branch')
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
+    
+    # Validate date range: date_to must be greater than or equal to date_from
+    if date_from and date_to:
+        parsed_date_from = parse_date_string(date_from)
+        parsed_date_to = parse_date_string(date_to)
+        
+        if parsed_date_from and parsed_date_to and parsed_date_to < parsed_date_from:
+            return Response(
+                {'error': 'Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
     if status_param:
         queryset = queryset.filter(status=status_param)
     if doctor:
@@ -412,7 +447,7 @@ def export_appointments_pdf(request):
         row = [
             a.appointment_date.strftime('%Y-%m-%d'),
             a.appointment_time.strftime('%H:%M'),
-            a.customer.full_name,
+            a.customer_name,
             a.doctor.get_full_name(),
             ", ".join([s.name for s in a.services.all()]),
             a.branch.name,

@@ -55,24 +55,17 @@ class Customer(models.Model):
     province = models.ForeignKey('locations.Province', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Tỉnh/Thành")
     ward = models.ForeignKey('locations.Ward', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Phường/Xã")
     street = models.CharField(max_length=255, blank=True, null=True, verbose_name="Số nhà, tên đường")
-    address_old = models.TextField(verbose_name="Địa chỉ cũ", blank=True, null=True)
 
     # Thông tin y tế
     medical_history = models.TextField(blank=True, null=True, verbose_name="Tiền sử bệnh")
     allergies = models.TextField(blank=True, null=True, verbose_name="Dị ứng")
     notes = models.TextField(blank=True, null=True, verbose_name="Ghi chú")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name="Trạng thái")
 
     # Thông tin hệ thống
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, verbose_name="Chi nhánh")
     services_used = models.ManyToManyField('Service', blank=True, related_name='customers', verbose_name="Dịch vụ sử dụng")
-    created_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name='created_customers',
-        verbose_name="Tạo bởi",
-    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name="Trạng thái")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -99,12 +92,21 @@ class Customer(models.Model):
 
 class Service(models.Model):
     """Dịch vụ nha khoa"""
+    
+    CATEGORY_CHOICES = [
+        ('implant', 'Trồng răng implant'),
+        ('crown', 'Bọc răng sứ'),
+        ('orthodontic', 'Niềng răng'),
+        ('other', 'Dịch vụ khác'),
+    ]
+    
     name = models.CharField(max_length=255, verbose_name="Tên dịch vụ")
+    code = models.CharField(max_length=20, unique=True, verbose_name="Mã dịch vụ")
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='other', verbose_name="Danh mục")
     description = models.TextField(blank=True, null=True, verbose_name="Mô tả")
     level = models.CharField(max_length=50, default='Standard', verbose_name="Cấp độ")
     level_number = models.PositiveSmallIntegerField(default=1, verbose_name="Cấp độ số")
-    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Giá")
-    duration_minutes = models.PositiveIntegerField(default=60, verbose_name="Thời gian (phút)")
+    price = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Giá")
     is_active = models.BooleanField(default=True, verbose_name="Hoạt động")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

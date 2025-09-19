@@ -15,12 +15,13 @@ class BranchSerializer(serializers.ModelSerializer):
 
 class ServiceSerializer(serializers.ModelSerializer):
     """Serializer for Service model"""
-    price = serializers.DecimalField(max_digits=10, decimal_places=2, coerce_to_string=False)
+    price = serializers.DecimalField(max_digits=12, decimal_places=2, coerce_to_string=False)
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
     
     class Meta:
         model = Service
-        fields = ['id', 'name', 'description', 'level', 'level_number', 
-                 'price', 'duration_minutes', 'is_active', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'code', 'category', 'category_display', 'description', 'level', 'level_number', 
+                 'price', 'is_active', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
 
 
@@ -48,9 +49,9 @@ class CustomerSerializer(serializers.ModelSerializer):
         model = Customer
         fields = ['id', 'first_name', 'last_name', 'phone', 'email', 
                  'gender', 'date_of_birth', 'province', 'ward', 'province_code', 'ward_code',
-                 'street', 'address_old', 'medical_history', 'allergies', 
+                 'street', 'medical_history', 'allergies', 
                  'notes', 'branch', 'branch_name', 'services_used', 'services_used_ids',
-                 'province_name', 'ward_name', 'created_at', 'updated_at']
+                 'province_name', 'ward_name', 'status', 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
     
     def to_internal_value(self, data):
@@ -185,8 +186,8 @@ class CustomerListSerializer(serializers.ModelSerializer):
         model = Customer
         fields = ['id', 'first_name', 'last_name', 'full_name', 'phone', 'email', 
                  'gender', 'date_of_birth', 'age', 'province_code', 'ward_code', 
-                 'street', 'province_name', 'ward_name', 'status',
-                 'branch', 'branch_name', 'created_at']
+                 'street', 'province_name', 'ward_name',
+                 'branch', 'branch_name', 'status', 'created_at']
     
     def get_province_code(self, obj):
         try:
@@ -224,7 +225,6 @@ class CustomerDetailSerializer(serializers.ModelSerializer):
     ward_code = serializers.SerializerMethodField()
     services_used = ServiceSerializer(many=True, read_only=True)
     age = serializers.ReadOnlyField()
-    created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
     date_of_birth = serializers.DateField(format='%d/%m/%Y', read_only=True)
     created_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     updated_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
@@ -234,9 +234,9 @@ class CustomerDetailSerializer(serializers.ModelSerializer):
         fields = ['id', 'first_name', 'last_name', 'full_name', 'phone', 'email', 
                  'gender', 'date_of_birth', 'age', 'province', 'province_name', 'province_code',
                  'ward', 'ward_name', 'ward_code', 'street', 
-                 'address_old', 'medical_history', 'allergies', 'notes', 
-                 'branch', 'branch_name', 'branch_address', 'services_used', 
-                 'created_by', 'created_by_name', 'created_at', 'updated_at']
+                 'medical_history', 'allergies', 'notes', 
+                 'branch', 'branch_name', 'branch_address', 'services_used', 'status',
+                 'created_at', 'updated_at']
         read_only_fields = ['created_at', 'updated_at']
     
     def get_province_name(self, obj):

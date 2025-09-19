@@ -256,7 +256,7 @@ class ApiService {
     return response.data;
   }
 
-  async createCustomer(customer: CustomerFormData): Promise<Customer> {
+  async createCustomer(customer: CustomerFormData | any): Promise<Customer> {
     const response: AxiosResponse<Customer> = await this.api.post('/customers/customers/', customer);
     return response.data;
   }
@@ -301,7 +301,7 @@ class ApiService {
     return response.data;
   }
 
-  async updateAppointment(id: number, appointment: Partial<Appointment>): Promise<Appointment> {
+  async updateAppointment(id: number, appointment: AppointmentFormData & { status?: Appointment['status'] }): Promise<Appointment> {
     const response: AxiosResponse<Appointment> = await this.api.patch(`/appointments/appointments/${id}/`, appointment);
     return response.data;
   }
@@ -386,7 +386,7 @@ class ApiService {
     return response.data;
   }
 
-  async createPayment(payment: PaymentFormData & { status?: Payment['status']; paid_amount?: number }): Promise<Payment> {
+  async createPayment(payment: PaymentFormData): Promise<Payment> {
     const response: AxiosResponse<Payment> = await this.api.post('/financials/payments/', payment);
     return response.data;
   }
@@ -398,15 +398,6 @@ class ApiService {
 
   async deletePayment(id: number): Promise<void> {
     await this.api.delete(`/financials/payments/${id}/`);
-  }
-
-  async addPayment(id: number, amount: number, paymentMethod: string, notes?: string): Promise<Payment> {
-    const response: AxiosResponse<Payment> = await this.api.post(`/financials/payments/${id}/add-payment/`, {
-      amount,
-      payment_method: paymentMethod,
-      notes
-    });
-    return response.data;
   }
 
   async exportPaymentsXlsx(params?: Record<string, any>): Promise<void> {

@@ -10,7 +10,6 @@ User = get_user_model()
 
 
 class AppointmentSerializer(serializers.ModelSerializer):
-    customer_name = serializers.CharField(source='customer.full_name', read_only=True)
     doctor_name = serializers.CharField(source='doctor.get_full_name', read_only=True)
     services = serializers.PrimaryKeyRelatedField(many=True, queryset=Service.objects.all())
     service_names = serializers.SerializerMethodField()
@@ -20,6 +19,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
     is_past = serializers.BooleanField(read_only=True)
     is_today = serializers.BooleanField(read_only=True)
     appointment_date = serializers.DateField(format='%d/%m/%Y', input_formats=['%d/%m/%Y', '%Y-%m-%d'])
+    appointment_time = serializers.TimeField(format='%H:%M', input_formats=['%H:%M'])
+    end_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
+    calculated_end_time = serializers.TimeField(format='%H:%M', read_only=True)
     created_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     updated_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
@@ -30,10 +32,10 @@ class AppointmentSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Appointment
-        fields = ['id', 'customer', 'customer_name', 'doctor', 'doctor_name', 
+        fields = ['id', 'customer_name', 'customer_phone', 'doctor', 'doctor_name', 
                  'branch', 'branch_name', 'services', 'service_names', 'services_with_quantity',
-                 'appointment_date', 'appointment_time', 'datetime', 'duration_minutes', 
-                 'appointment_type', 'status', 'status_display', 'notes', 'consultant', 'consultant_name', 'is_past', 'is_today', 'created_by', 'created_by_name', 
+                 'appointment_date', 'appointment_time', 'end_time', 'calculated_end_time', 'datetime', 'duration_minutes', 
+                 'appointment_type', 'status', 'status_display', 'is_waitlist', 'waitlist_position', 'notes', 'consultant', 'consultant_name', 'is_past', 'is_today', 'created_by', 'created_by_name', 
                  'created_at', 'updated_at', 'consultant_id']
         read_only_fields = ['created_at', 'updated_at', 'created_by']
     
@@ -78,7 +80,23 @@ class AppointmentSerializer(serializers.ModelSerializer):
         doctor = data.get('doctor')
         appointment_date = data.get('appointment_date')
         appointment_time = data.get('appointment_time')
+        end_time = data.get('end_time')
         duration_minutes = data.get('duration_minutes', 30)  # Default 30 minutes if not provided
+
+        # Validate end_time if provided
+        if end_time and appointment_time:
+            from datetime import datetime, timedelta
+            start_datetime = datetime.combine(appointment_date, appointment_time)
+            end_datetime = datetime.combine(appointment_date, end_time)
+            
+            if end_datetime <= start_datetime:
+                raise serializers.ValidationError(
+                    "Giờ kết thúc phải sau giờ bắt đầu"
+                )
+            
+            # If end_time is provided, calculate the actual duration and update duration_minutes
+            calculated_duration = int((end_datetime - start_datetime).total_seconds() / 60)
+            data['duration_minutes'] = calculated_duration
 
         if doctor and appointment_date and appointment_time:
             from datetime import datetime, timedelta
@@ -97,7 +115,16 @@ class AppointmentSerializer(serializers.ModelSerializer):
             if self.instance:
                 queryset = queryset.exclude(pk=self.instance.pk)
 
-            # Check for time conflicts
+            # Check for exact time conflicts (unique_together constraint)
+            exact_time_conflicts = queryset.filter(appointment_time=appointment_time)
+            if exact_time_conflicts.exists():
+                conflict = exact_time_conflicts.first()
+                raise serializers.ValidationError(
+                    f"Bác sĩ đã có lịch hẹn vào cùng thời điểm ({appointment_time}) với khách hàng '{conflict.customer_name}'. "
+                    f"Vui lòng chọn thời gian khác hoặc thay đổi bác sĩ."
+                )
+
+            # Check for time overlap conflicts
             conflicting_appointments = []
             for existing_appointment in queryset:
                 existing_datetime = datetime.combine(
@@ -114,7 +141,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
                     conflicting_appointments.append({
                         'time': existing_appointment.appointment_time.strftime('%H:%M'),
                         'duration': existing_appointment.duration_minutes,
-                        'customer': existing_appointment.customer.full_name,
+                        'customer': existing_appointment.customer_name,
                         'status': existing_appointment.get_status_display()
                     })
 
@@ -135,7 +162,21 @@ class AppointmentSerializer(serializers.ModelSerializer):
                 appointment_datetime = timezone.make_aware(appointment_datetime)
             
             now = timezone.now().replace(second=0, microsecond=0)
-            if appointment_datetime < now:
+            
+            # Ensure both datetimes are in the same timezone for comparison
+            if appointment_datetime.tzinfo != now.tzinfo:
+                appointment_datetime = appointment_datetime.astimezone(now.tzinfo)
+            
+            today = now.date()
+            
+            # Allow appointments for today and future dates
+            if appointment_date < today:
+                raise serializers.ValidationError(
+                    "Không thể đặt lịch hẹn trong quá khứ. Vui lòng chọn ngày hôm nay hoặc trong tương lai."
+                )
+            
+            # For today's appointments, check if time is in the past
+            if appointment_date == today and appointment_datetime < now:
                 raise serializers.ValidationError(
                     "Không thể đặt lịch hẹn trong quá khứ. Vui lòng chọn thời gian trong tương lai."
                 )
@@ -213,27 +254,27 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
 
 class AppointmentListSerializer(serializers.ModelSerializer):
-    customer_name = serializers.CharField(source='customer.full_name', read_only=True)
     doctor_name = serializers.CharField(source='doctor.get_full_name', read_only=True)
     service_names = serializers.SerializerMethodField()
     services = serializers.PrimaryKeyRelatedField(many=True, read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     created_by_name = serializers.CharField(source='created_by.get_full_name', read_only=True)
-    customer = serializers.IntegerField(source='customer.id', read_only=True)
     doctor = serializers.IntegerField(source='doctor.id', read_only=True)
     branch = serializers.IntegerField(source='branch.id', read_only=True)
     datetime = serializers.DateTimeField(read_only=True)
     is_past = serializers.BooleanField(read_only=True)
     is_today = serializers.BooleanField(read_only=True)
     appointment_date = serializers.DateField(format='%d/%m/%Y', input_formats=['%d/%m/%Y', '%Y-%m-%d'])
+    end_time = serializers.TimeField(format='%H:%M', read_only=True)
+    calculated_end_time = serializers.TimeField(format='%H:%M', read_only=True)
     created_at = serializers.DateTimeField(format='%d/%m/%Y %H:%M', read_only=True)
     consultant = serializers.SerializerMethodField(read_only=True)
     consultant_name = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Appointment
-        fields = ['id', 'customer', 'customer_name', 'doctor', 'doctor_name', 'service_names', 'services', 
-                 'branch', 'branch_name', 'appointment_date', 'appointment_time', 'datetime', 'status', 
+        fields = ['id', 'customer_name', 'customer_phone', 'doctor', 'doctor_name', 'service_names', 'services', 
+                 'branch', 'branch_name', 'appointment_date', 'appointment_time', 'end_time', 'calculated_end_time', 'datetime', 'status', 
                  'notes', 'consultant', 'consultant_name', 'created_by_name', 'is_past', 'is_today', 'created_at']
 
     def get_service_names(self, obj):
@@ -277,13 +318,11 @@ class AppointmentHistorySerializer(serializers.ModelSerializer):
 
 
 class AppointmentCalendarSerializer(serializers.ModelSerializer):
-    customer_name = serializers.CharField(source='customer.full_name', read_only=True)
     doctor_name = serializers.CharField(source='doctor.get_full_name', read_only=True)
     service_names = serializers.SerializerMethodField()
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     title = serializers.SerializerMethodField()
     # include ids needed for calendar rendering on frontend
-    customer = serializers.IntegerField(source='customer.id', read_only=True)
     doctor = serializers.IntegerField(source='doctor.id', read_only=True)
     branch = serializers.IntegerField(source='branch.id', read_only=True)
     appointment_date = serializers.DateField(format='%d/%m/%Y', input_formats=['%d/%m/%Y', '%Y-%m-%d'])
@@ -292,11 +331,11 @@ class AppointmentCalendarSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Appointment
-        fields = ['id', 'title', 'customer', 'customer_name', 'doctor', 'doctor_name', 'service_names', 'branch', 'branch_name',
+        fields = ['id', 'title', 'customer_name', 'customer_phone', 'doctor', 'doctor_name', 'service_names', 'branch', 'branch_name',
                  'appointment_date', 'appointment_time', 'status', 'notes', 'consultant', 'consultant_name']
     
     def get_title(self, obj):
-        return f"{obj.customer.full_name} - {obj.service_names}"
+        return f"{obj.customer_name} - {obj.service_names}"
 
     def get_service_names(self, obj):
         return ", ".join([service.name for service in obj.services.all()])

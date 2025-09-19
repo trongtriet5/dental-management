@@ -14,6 +14,7 @@ const menuItems = [
   { text: 'Thu chi', icon: 'bi-cash-stack', path: '/financials', roles: ['admin', 'manager', 'creceptionist'] },
   { text: 'Báo cáo', icon: 'bi-graph-up', path: '/reports', roles: ['admin', 'manager'] },
   { text: 'Quản lý nhân viên', icon: 'bi-person-gear', path: '/staff', roles: ['admin', 'manager'] },
+  { text: 'Quản lý dịch vụ', icon: 'bi-gear', path: '/services', roles: ['admin', 'manager', 'creceptionist'] },
 ];
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {

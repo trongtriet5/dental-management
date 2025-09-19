@@ -40,10 +40,11 @@ class ServiceListCreateView(generics.ListCreateAPIView):
     serializer_class = ServiceSerializer
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['is_active']
+    filterset_fields = ['is_active', 'category']
     search_fields = ['name', 'description']
-    ordering_fields = ['name', 'price', 'created_at']
+    ordering_fields = ['name', 'price', 'created_at', 'category']
     ordering = ['name']
+    pagination_class = None  # Disable pagination to show all services
 
 
 class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -55,7 +56,7 @@ class ServiceDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class CustomerListCreateView(generics.ListCreateAPIView):
     """List and create customers"""
-    queryset = Customer.objects.select_related('branch', 'created_by').prefetch_related('services_used').all()
+    queryset = Customer.objects.select_related('branch').prefetch_related('services_used').all()
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['gender', 'branch', 'created_at']
@@ -71,8 +72,7 @@ class CustomerListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         try:
             print(f"Creating customer with data: {serializer.validated_data}")
-            # Set created_by to current user
-            serializer.save(created_by=self.request.user)
+            serializer.save()
             print(f"Customer created successfully")
         except Exception as e:
             print(f"Error creating customer: {e}")
@@ -81,7 +81,7 @@ class CustomerListCreateView(generics.ListCreateAPIView):
 
 class CustomerDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Retrieve, update or delete customer"""
-    queryset = Customer.objects.select_related('branch', 'created_by').prefetch_related('services_used').all()
+    queryset = Customer.objects.select_related('branch').prefetch_related('services_used').all()
     serializer_class = CustomerDetailSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -261,11 +261,8 @@ def fix_payments_view(request):
                     customer=customer,
                     branch=customer.branch,
                     amount=total_price,
-                    paid_amount=0,
                     payment_method='cash',
-                    status='pending',
-                    notes=f'Tự động tạo từ dịch vụ khách hàng',
-                    created_by=request.user
+                    notes=f'Tự động tạo từ dịch vụ khách hàng'
                 )
                 payment.services.set(services)
                 fixed_count += 1

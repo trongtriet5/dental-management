@@ -5,8 +5,6 @@ urlpatterns = [
     # Payments
     path('payments/', views.PaymentListCreateView.as_view(), name='payment-list-create'),
     path('payments/<int:pk>/', views.PaymentDetailView.as_view(), name='payment-detail'),
-    path('payments/<int:pk>/add-payment/', views.add_payment, name='add-payment'),
-    path('payments/<int:pk>/history/', views.payment_history, name='payment-history'),
     path('payments/export/xlsx/', views.export_payments_excel, name='export-payments-excel'),
     path('payments/export/pdf/', views.export_payments_pdf, name='export-payments-pdf'),
     

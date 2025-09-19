@@ -151,18 +151,15 @@ def dashboard_stats(request):
     
     # Financial stats
     this_month_revenue = Payment.objects.filter(
-        payment_date__gte=this_month_start,
-        status__in=['paid', 'partial']
-    ).aggregate(total=Sum('paid_amount'))['total'] or 0
+        created_at__date__gte=this_month_start
+    ).aggregate(total=Sum('amount'))['total'] or 0
     
     this_month_expenses = Expense.objects.filter(
         expense_date__gte=this_month_start
     ).aggregate(total=Sum('amount'))['total'] or 0
     
-    # Pending payments
-    pending_payments = Payment.objects.filter(
-        status='pending'
-    ).count()
+    # Pending payments (no pending payments since all are complete)
+    pending_payments = 0
     
     stats = {
         'total_customers': total_customers,

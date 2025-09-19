@@ -90,6 +90,14 @@ def generate_report(request):
     report_type = data['report_type']
     start_date = data['start_date']
     end_date = data['end_date']
+    
+    # Validate date range: end_date must be greater than or equal to start_date
+    if end_date < start_date:
+        return Response(
+            {'error': 'Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
     branch_id = data.get('branch_id')
     doctor_id = data.get('doctor_id')
     service_id = data.get('service_id')
@@ -163,10 +171,9 @@ def generate_revenue_report(filters, group_by):
                     
                     # Tính số tiền tương ứng với service này
                     service_amount = payment.amount * service_ratio
-                    service_paid_amount = payment.paid_amount * service_ratio
                     
                     total_service_amount += service_amount
-                    paid_service_amount += service_paid_amount
+                    paid_service_amount += service_amount  # All payments are complete now
             
             data.append({
                 'service__name': service.name,
@@ -179,19 +186,19 @@ def generate_revenue_report(filters, group_by):
     elif group_by == 'branch':
         data = payments.values('branch__name').annotate(
             total_amount=Sum('amount'),
-            paid_amount=Sum('paid_amount'),
+            paid_amount=Sum('amount'),  # paid_amount = amount since all payments are complete
             count=Count('id')
         ).order_by('-total_amount')
     elif group_by == 'doctor':
         data = payments.values('appointment__doctor__last_name', 'appointment__doctor__first_name').annotate(
             total_amount=Sum('amount'),
-            paid_amount=Sum('paid_amount'),
+            paid_amount=Sum('amount'),  # paid_amount = amount since all payments are complete
             count=Count('id')
         ).order_by('-total_amount')
     else:
         data = [{
             'total_amount': payments.aggregate(total=Sum('amount'))['total'] or 0,
-            'paid_amount': payments.aggregate(total=Sum('paid_amount'))['total'] or 0,
+            'paid_amount': payments.aggregate(total=Sum('amount'))['total'] or 0,  # paid_amount = amount since all payments are complete
             'count': payments.count()
         }]
     
@@ -278,10 +285,9 @@ def generate_service_report(filters, group_by):
                 
                 # Tính số tiền tương ứng với service này
                 service_amount = payment.amount * service_ratio
-                service_paid_amount = payment.paid_amount * service_ratio
                 
                 total_service_amount += service_amount
-                paid_service_amount += service_paid_amount
+                paid_service_amount += service_amount  # All payments are complete now
         
         data.append({
             'service_name': service.name,
@@ -306,7 +312,7 @@ def generate_doctor_report(filters, group_by):
             'doctor_name': doctor.get_full_name(),
             'appointment_count': appointments.count(),
             'total_revenue': payments.aggregate(total=Sum('amount'))['total'] or 0,
-            'paid_revenue': payments.aggregate(total=Sum('paid_amount'))['total'] or 0
+            'paid_revenue': payments.aggregate(total=Sum('amount'))['total'] or 0  # paid_amount = amount since all payments are complete
         })
     
     return data
@@ -328,7 +334,7 @@ def generate_branch_report(filters, group_by):
             'customer_count': customers.count(),
             'appointment_count': appointments.count(),
             'total_revenue': payments.aggregate(total=Sum('amount'))['total'] or 0,
-            'paid_revenue': payments.aggregate(total=Sum('paid_amount'))['total'] or 0,
+            'paid_revenue': payments.aggregate(total=Sum('amount'))['total'] or 0,  # paid_amount = amount since all payments are complete
             'total_expenses': expenses.aggregate(total=Sum('amount'))['total'] or 0
         })
     
@@ -347,7 +353,7 @@ def generate_summary(report_data):
             return {
                 'total_amount': total_amount,
                 'paid_amount': paid_amount,
-                'pending_amount': total_amount - paid_amount,
+                'pending_amount': 0,  # No pending amounts since all payments are complete
                 'item_count': len(report_data)
             }
         elif 'count' in report_data[0]:

@@ -26,11 +26,8 @@ def create_payment_for_customer(sender, instance, created, **kwargs):
                 customer=instance,
                 branch=instance.branch,
                 amount=total_amount,
-                paid_amount=0,
                 payment_method='cash',
-                status='pending',
-                notes=f'Tự động tạo từ dịch vụ khách hàng',
-                created_by=instance.created_by
+                notes=f'Tự động tạo từ dịch vụ khách hàng'
             )
             # Thêm services vào payment
             payment.services.set(instance.services_used.all())
@@ -62,11 +59,8 @@ def update_payment_when_services_change(sender, instance, action, pk_set, **kwar
                     customer=instance,
                     branch=instance.branch,
                     amount=total_amount,
-                    paid_amount=0,
                     payment_method='cash',
-                    status='pending',
-                    notes=f'Tự động tạo từ dịch vụ khách hàng',
-                    created_by=instance.created_by
+                    notes=f'Tự động tạo từ dịch vụ khách hàng'
                 )
                 # Thêm services vào payment
                 payment.services.set(instance.services_used.all())

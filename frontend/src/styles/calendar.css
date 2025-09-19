@@ -1,0 +1,305 @@
+/* Calendar Styles */
+.calendar-month {
+  background: white;
+}
+
+.calendar-day-header {
+  background-color: #f8f9fa;
+  border-right: 1px solid #dee2e6;
+}
+
+.calendar-day-header:last-child {
+  border-right: none;
+}
+
+.calendar-day {
+  border-right: 1px solid #dee2e6;
+  transition: background-color 0.2s ease;
+}
+
+.calendar-day:last-child {
+  border-right: none;
+}
+
+.calendar-day:hover {
+  background-color: #f8f9fa;
+}
+
+.calendar-day.today {
+  background-color: #e3f2fd;
+}
+
+.calendar-day.selected {
+  background-color: #bbdefb;
+}
+
+.appointment-mini {
+  transition: all 0.2s ease;
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin-bottom: 2px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.appointment-mini:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+.appointment-card {
+  transition: all 0.2s ease;
+  border-radius: 6px;
+  border: 1px solid #dee2e6;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.appointment-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Calendar day view styles */
+.calendar-day .time-slot {
+  border-bottom: 1px solid #dee2e6;
+  min-height: 60px;
+  padding: 8px;
+}
+
+.calendar-day .time-slot:last-child {
+  border-bottom: none;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .calendar-day {
+    min-height: 80px;
+  }
+  
+  .appointment-mini {
+    font-size: 0.6rem;
+    padding: 1px 2px;
+  }
+  
+  .calendar-day-header {
+    font-size: 0.8rem;
+  }
+}
+
+/* Custom scrollbar for calendar */
+.calendar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 #f7fafc;
+}
+
+.calendar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.calendar-scroll::-webkit-scrollbar-track {
+  background: #f7fafc;
+  border-radius: 3px;
+}
+
+.calendar-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 3px;
+}
+
+.calendar-scroll::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0;
+}
+
+/* Status badges */
+.status-badge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+}
+
+/* Doctor color indicators */
+.doctor-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+/* Calendar navigation */
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-nav .btn {
+  border-radius: 6px;
+  padding: 6px 12px;
+}
+
+/* Calendar header */
+.calendar-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px;
+  border-radius: 8px 8px 0 0;
+}
+
+.calendar-header h5 {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* Calendar body */
+.calendar-body {
+  background: white;
+  border-radius: 0 0 8px 8px;
+  overflow: hidden;
+}
+
+/* Calendar footer */
+.calendar-footer {
+  background: #f8f9fa;
+  border-top: 1px solid #dee2e6;
+  padding: 12px 16px;
+}
+
+/* Animation for calendar transitions */
+.calendar-transition {
+  transition: all 0.3s ease-in-out;
+}
+
+/* Loading state */
+.calendar-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+}
+
+/* Empty state */
+.calendar-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6c757d;
+}
+
+.calendar-empty i {
+  font-size: 3rem;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+/* Calendar grid improvements */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0;
+}
+
+.calendar-grid .calendar-day {
+  aspect-ratio: 1;
+  min-height: 120px;
+}
+
+/* Time slot improvements */
+.time-slot-header {
+  background: #f8f9fa;
+  border-bottom: 2px solid #dee2e6;
+  font-weight: 600;
+  color: #495057;
+}
+
+.time-slot-content {
+  background: white;
+  border-bottom: 1px solid #e9ecef;
+}
+
+/* Appointment tooltip */
+.appointment-tooltip {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  z-index: 1000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.appointment-tooltip.show {
+  opacity: 1;
+}
+
+/* Calendar legend */
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.calendar-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-legend-color {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid #dee2e6;
+}
+
+/* Calendar view mode buttons */
+.view-mode-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.view-mode-buttons .btn {
+  border-radius: 6px;
+  font-size: 0.8rem;
+  padding: 6px 12px;
+}
+
+/* Calendar date picker */
+.calendar-date-picker {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+
+/* Calendar stats */
+.calendar-stats {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.calendar-stat {
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 12px 16px;
+  text-align: center;
+  min-width: 80px;
+}
+
+.calendar-stat-number {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #007bff;
+}
+
+.calendar-stat-label {
+  font-size: 0.8rem;
+  color: #6c757d;
+  margin-top: 4px;
+}

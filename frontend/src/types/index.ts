@@ -54,11 +54,16 @@ export interface Branch {
 export interface Service {
   id: number;
   name: string;
+  code?: string;
+  category: 'implant' | 'crown' | 'orthodontic' | 'other';
+  category_display?: string;
   description?: string;
+  level: string;
+  level_number: number;
   price: number;
-  duration_minutes: number;
   is_active: boolean;
-  level_number?: number;
+  created_at: string;
+  updated_at: string;
 }
 
 // Location types
@@ -105,9 +110,7 @@ export interface Customer {
   branch: number;
   branch_name?: string;
   services_used?: Service[];
-  status: 'active' | 'inactive' | 'lead' | 'success';
-  created_by?: number;
-  created_by_name?: string;
+  status: 'active' | 'inactive' | 'success';
   created_at: string;
   updated_at: string;
 }
@@ -115,8 +118,8 @@ export interface Customer {
 // Appointment types
 export interface Appointment {
   id: number;
-  customer: number;
   customer_name: string;
+  customer_phone: string;
   doctor: number;
   doctor_name: string;
   consultant?: number;
@@ -129,11 +132,14 @@ export interface Appointment {
   services_with_quantity: Array<{service_id: number, quantity: number}>;
   appointment_date: string;
   appointment_time: string;
+  end_time?: string;
+  calculated_end_time?: string;
   datetime: string;
   duration_minutes: number;
   appointment_type: 'consultation' | 'treatment' | 'follow_up' | 'emergency';
   status: 'scheduled' | 'confirmed' | 'arrived' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
   status_display?: string;
+  is_waitlist: boolean;
   notes?: string;
   is_past: boolean;
   is_today: boolean;
@@ -156,23 +162,14 @@ export interface Payment {
   customer: number;
   customer_id: number;
   customer_name: string;
-  appointment?: number;
   services: number[];
   services_names: string[];
   services_details: ServiceDetail[];
   branch: number;
   branch_name: string;
   amount: number;
-  paid_amount: number;
-  remaining_amount: number | string;
-  payment_percentage: number;
-  is_fully_paid: boolean;
   payment_method: 'cash' | 'card' | 'bank_transfer' | 'insurance' | 'other';
-  status: 'pending' | 'paid' | 'partial' | 'refunded' | 'cancelled';
-  payment_date?: string;
   notes?: string;
-  created_by?: number;
-  created_by_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -187,8 +184,6 @@ export interface Expense {
   branch: number;
   branch_name?: string;
   expense_date: string;
-  created_by?: number;
-  created_by_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -256,17 +251,20 @@ export interface CustomerFormData {
   allergies: string;
   notes: string;
   branch: number;
-  services_used: number[];
+  services_used?: number[];
+  services_used_ids?: number[];
 }
 
 export interface AppointmentFormData {
-  customer: number;
+  customer_name: string;
+  customer_phone: string;
   doctor: number;
   branch: number;
   services: number[];
   services_with_quantity: Array<{service_id: number, quantity: number}>;
   appointment_date: string;
   appointment_time: string;
+  end_time?: string;
   duration_minutes: number;
   appointment_type: 'consultation' | 'treatment' | 'follow_up' | 'emergency';
   notes?: string;
