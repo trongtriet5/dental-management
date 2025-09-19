@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, Form, Row, Col, Card, Table, Alert, Spinner } from 'react-bootstrap';
+import { Modal, Button, Form, Row, Col, Card, Table, Alert, Spinner, Dropdown } from 'react-bootstrap';
+import Select from 'react-select';
 import api from '../services/api';
-import { Customer, Branch, CustomerFormData, Service, User, Province, Ward } from '../types';
+import { Customer, Branch, CustomerFormData, Service, User, Province, Ward, Appointment } from '../types';
+import { getPhoneNumberError } from '../utils/validation';
 import TimePicker from '../components/TimePicker';
 import DatePicker from '../components/DatePicker';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../utils/date';
@@ -145,6 +147,8 @@ const Customers: React.FC = (): JSX.Element => {
     services_used: [],
   });
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
+  const [selectedServicesWithQuantity, setSelectedServicesWithQuantity] = useState<Array<{service_id: number, quantity: number}>>([]);
+  const [serviceSearch, setServiceSearch] = useState<string>('');
   const [appointmentDate, setAppointmentDate] = useState<string>('');
   const [appointmentTime, setAppointmentTime] = useState<string>('');
   const [appointmentDoctor, setAppointmentDoctor] = useState<number | ''>('');
@@ -152,6 +156,10 @@ const Customers: React.FC = (): JSX.Element => {
   const [appointmentNotes, setAppointmentNotes] = useState<string>('');
   const [createAppointment, setCreateAppointment] = useState<boolean>(false);
   const [currentAppointment, setCurrentAppointment] = useState<any>(null);
+  // Creation mode: new customer vs from existing appointment
+  const [creationMode, setCreationMode] = useState<'new' | 'from_appointment'>('new');
+  const [appointmentIdInput, setAppointmentIdInput] = useState<string>('');
+  const [isFetchingAppointment, setIsFetchingAppointment] = useState<boolean>(false);
   
   
 
@@ -178,9 +186,9 @@ const Customers: React.FC = (): JSX.Element => {
         api.getStaff(),
       ]);
       
-      setCustomers(customersData.results);
-      setBranches(branchesData.results);
-      setServices(servicesData.results);
+      setCustomers(customersData.results || customersData || []);
+      setBranches(branchesData.results || branchesData || []);
+      setServices(servicesData?.results || servicesData || []);
       setDoctors((doctorsData as any).results || (doctorsData as any));
       setStaff((staffData as any).results || (staffData as any));
       
@@ -311,10 +319,14 @@ const Customers: React.FC = (): JSX.Element => {
     
     // Reset appointment data only for new customers
     if (!customer) {
+      setCreationMode('new');
+      setAppointmentIdInput('');
+      setIsFetchingAppointment(false);
       setAppointmentDate('');
       setAppointmentTime('');
       setAppointmentDoctor('');
       setSelectedServices([]);
+      setSelectedServicesWithQuantity([]);
       setCurrentAppointment(null);
       // Reset address data for new customers
       setWards([]);
@@ -348,6 +360,7 @@ const Customers: React.FC = (): JSX.Element => {
         };
         setFormData(formDataToSet);
         setSelectedServices(filteredServices);
+        setSelectedServicesWithQuantity(filteredServices.map(id => ({ service_id: id, quantity: 1 })));
         if (detail.province_code) {
           await fetchWards(detail.province_code);
         }
@@ -375,8 +388,61 @@ const Customers: React.FC = (): JSX.Element => {
         branch: branches.length > 0 ? branches[0].id : 0,
         services_used: [],
       });
+      setSelectedServicesWithQuantity([]);
     }
     setShowDialog(true);
+  };
+
+  const prefillFromAppointment = (appt: Appointment) => {
+    // Split name into first and last (best-effort)
+    const name = (appt.customer_name || '').trim();
+    const parts = name.split(' ');
+    const firstName = parts.length > 1 ? parts[parts.length - 1] : name;
+    const lastName = parts.length > 1 ? parts.slice(0, parts.length - 1).join(' ') : '';
+
+    const filteredServices = (appt.services || []).filter(id => services.some(s => s.id === id));
+    const servicesWithQty = (appt.services_with_quantity || filteredServices.map(id => ({ service_id: id, quantity: 1 })))
+      .filter(item => services.some(s => s.id === item.service_id))
+      .map(item => ({ service_id: item.service_id, quantity: item.quantity || 1 }));
+
+    setFormData(prev => ({
+      ...prev,
+      first_name: firstName,
+      last_name: lastName,
+      phone: appt.customer_phone || '',
+      branch: appt.branch || prev.branch,
+      services_used: filteredServices,
+    }));
+    setSelectedServices(filteredServices);
+    setSelectedServicesWithQuantity(servicesWithQty);
+  };
+
+  const handleFetchAppointmentToPrefill = async () => {
+    if (!appointmentIdInput) {
+      setDialogError('Vui lòng nhập ID lịch hẹn để lấy dữ liệu');
+      return;
+    }
+    setDialogError('');
+    setIsFetchingAppointment(true);
+    try {
+      const appt = await api.getAppointment(Number(appointmentIdInput));
+      if (!appt) {
+        setDialogError('Không tìm thấy lịch hẹn');
+        return;
+      }
+      prefillFromAppointment(appt as unknown as Appointment);
+      await Swal.fire({
+        icon: 'success',
+        title: 'Đã tải dữ liệu lịch hẹn',
+        text: `Đã điền thông tin từ lịch hẹn #${appointmentIdInput}`,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#28a745'
+      });
+    } catch (e: any) {
+      setDialogError('Không thể tải lịch hẹn. Vui lòng kiểm tra ID và thử lại.');
+    } finally {
+      setIsFetchingAppointment(false);
+    }
   };
 
   const handleCloseDialog = () => {
@@ -438,9 +504,9 @@ const Customers: React.FC = (): JSX.Element => {
         setDialogError('Số điện thoại không được để trống');
         return;
       }
-      
-      if (formData.phone && !/^[0-9]{10,11}$/.test(formData.phone)) {
-        setDialogError('Số điện thoại phải có 10-11 chữ số');
+      const phoneError = getPhoneNumberError(formData.phone);
+      if (phoneError) {
+        setDialogError(phoneError);
         return;
       }
       
@@ -459,18 +525,6 @@ const Customers: React.FC = (): JSX.Element => {
         return;
       }
       
-      // Validation cho ngày đặt hẹn
-      if (createAppointment && appointmentDate) {
-        const selectedDate = new Date(appointmentDate);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0); // Reset time để chỉ so sánh ngày
-        
-        if (selectedDate < today) {
-          setDialogError('Ngày đặt hẹn không thể là ngày trong quá khứ');
-          return;
-        }
-      }
-      
       // Clean up form data before submission
       const submissionData = {
         first_name: formData.first_name.trim(),
@@ -486,7 +540,9 @@ const Customers: React.FC = (): JSX.Element => {
         allergies: formData.allergies?.trim() || '',
         notes: formData.notes?.trim() || '',
         branch: formData.branch,
-        services_used: selectedServices.length > 0 ? selectedServices : (formData.services_used || [])
+        services_used: (selectedServicesWithQuantity.length > 0
+          ? selectedServicesWithQuantity.map(x => x.service_id)
+          : (selectedServices.length > 0 ? selectedServices : (formData.services_used || [])))
       };
       let saved: Customer;
       if (editingCustomer) {
@@ -497,294 +553,40 @@ const Customers: React.FC = (): JSX.Element => {
       
       await fetchData();
       
-      // Tạo customer first_name và last_name
       const fullName = `${formData.first_name} ${formData.last_name}`.trim();
       
-      // Tự động tạo thanh toán khi thêm khách hàng mới (không phải chỉnh sửa)
-      if (!editingCustomer && selectedServices.length > 0) {
-        try {
-          // Tính tổng giá trị dịch vụ
-          const totalAmount = selectedServices.reduce((total, serviceId) => {
-            const service = services.find(s => s.id === serviceId);
-            return total + (service ? service.price : 0);
-          }, 0);
-          
-          if (totalAmount > 0) {
-            // Tạo thanh toán tự động
-            const paymentData = {
-              customer: saved.id,
-              services: selectedServices,
-              branch: formData.branch,
-              amount: totalAmount,
-              payment_method: 'cash' as const,
-              notes: `Thanh toán tự động khi tạo khách hàng ${fullName}`,
-              status: 'pending' as const,
-              paid_amount: 0
-            };
-            
-            await api.createPayment(paymentData);
-            
-            // Hiển thị thông báo thành công với thông tin thanh toán
             await Swal.fire({
               icon: 'success',
               title: 'Thành công!',
-              html: `
-                <div class="text-start">
-                  <p><strong>Khách hàng:</strong> ${fullName} đã được tạo thành công</p>
-                  <p><strong>Thanh toán:</strong> Đã tự động tạo thanh toán ${formatCurrency(totalAmount)}</p>
-                  <p class="text-muted small mt-2">
-                    <i class="bi bi-info-circle me-1"></i>
-                    Bạn có thể xem và quản lý thanh toán trong trang Thu chi
-                  </p>
-                </div>
-              `,
+        text: `${editingCustomer ? 'Khách hàng đã được cập nhật' : 'Khách hàng đã được tạo'}: ${fullName}`,
               confirmButtonText: 'OK',
               confirmButtonColor: '#28a745'
             });
-          } else {
-            // Hiển thị thông báo thành công thông thường
-            await Swal.fire({
-              icon: 'success',
-              title: 'Thành công!',
-              text: `Khách hàng ${fullName} đã được tạo thành công`,
-              confirmButtonText: 'OK',
-              confirmButtonColor: '#28a745'
-            });
-          }
-        } catch (paymentError: any) {
-          console.error('Error creating payment:', paymentError);
-          // Hiển thị thông báo thành công cho khách hàng nhưng cảnh báo về thanh toán
-          await Swal.fire({
-            icon: 'warning',
-            title: 'Khách hàng đã được tạo',
-            html: `
-              <div class="text-start">
-                <p><strong>Khách hàng:</strong> ${fullName} đã được tạo thành công</p>
-                <p class="text-warning"><strong>Cảnh báo:</strong> Không thể tạo thanh toán tự động</p>
-                <p class="text-muted small mt-2">
-                  <i class="bi bi-info-circle me-1"></i>
-                  Bạn có thể tạo thanh toán thủ công trong trang Thu chi
-                </p>
-              </div>
-            `,
-            confirmButtonText: 'OK',
-            confirmButtonColor: '#ffc107'
-          });
-        }
-      } else if (editingCustomer) {
-        // Hiển thị thông báo thành công cho việc cập nhật
-        await Swal.fire({
-          icon: 'success',
-          title: 'Thành công!',
-          text: `Khách hàng ${fullName} đã được cập nhật thành công`,
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#28a745'
-        });
-      } else {
-        // Hiển thị thông báo thành công thông thường
-        await Swal.fire({
-          icon: 'success',
-          title: 'Thành công!',
-          text: `Khách hàng ${fullName} đã được tạo thành công`,
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#28a745'
-        });
-      }
       
-      // Không tạo lịch hẹn tự động khi thêm khách hàng
-      // Lịch hẹn sẽ được tạo riêng thông qua trang Appointments
-      if (false) { // Disabled automatic appointment creation
-        try {
-          // Kiểm tra tính khả dụng trước khi tạo/cập nhật lịch hẹn
-          if (appointmentDoctor) {
-            const availability = await api.checkAppointmentAvailability({
-              doctor_id: Number(appointmentDoctor),
-              appointment_date: appointmentDate,
-              appointment_time: appointmentTime,
-              duration_minutes: 60,
-              appointment_id: currentAppointment?.id // Bỏ qua lịch hẹn hiện tại khi cập nhật
-            });
-            
-            if (!availability.available) {
-              let conflictMessage = 'Bác sĩ đã có lịch hẹn trùng thời gian:\n';
-              availability.conflicts.forEach(conflict => {
-                conflictMessage += `- ${conflict.time} (${conflict.duration} phút) - ${conflict.customer} (${conflict.status})\n`;
-              });
-              conflictMessage += '\nVui lòng chọn thời gian khác.';
-              
-              await Swal.fire({
-                icon: 'error',
-                title: 'Lỗi tạo lịch hẹn!',
-                html: `
-                  <div class="text-start">
-                    <p><strong>Khách hàng:</strong> ${fullName} đã được ${editingCustomer ? 'cập nhật' : 'tạo'} thành công</p>
-                    <p><strong>Lỗi:</strong> ${conflictMessage}</p>
-                    <p class="text-muted small mt-2">
-                      <i class="bi bi-info-circle me-1"></i>
-                      Bạn có thể tạo lịch hẹn sau bằng cách chỉnh sửa khách hàng này
-                    </p>
-                  </div>
-                `,
-                confirmButtonText: 'OK',
-                confirmButtonColor: '#dc3545'
-              });
-              return;
-            }
-          }
-          
-          const appointmentData = {
-            customer_name: saved.full_name,
-            customer_phone: saved.phone,
-            doctor: appointmentDoctor || 0,
-            branch: formData.branch,
-            services: selectedServices,
-            services_with_quantity: selectedServices.map(serviceId => ({ service_id: serviceId, quantity: 1 })),
-            appointment_date: appointmentDate,
-            appointment_time: appointmentTime,
-            duration_minutes: 60, // Default 60 minutes
-            appointment_type: 'consultation' as const,
-            notes: appointmentConsultant ? 
-              `CONSULTANT_ID:${appointmentConsultant}${appointmentNotes ? '\n' + appointmentNotes : ''}` : 
-              appointmentNotes,
-            status: 'scheduled' as const
-          };
-          
-          // Check if customer already has an appointment
-          if (currentAppointment) {
-            // Update existing appointment
-            await api.updateAppointment(currentAppointment.id, appointmentData);
-          } else {
-            // Create new appointment
-            await api.createAppointment(appointmentData);
-          }
-          
-          // Tạo thanh toán khi khách hàng chấp nhận dịch vụ
-          if (selectedServices.length > 0) {
-            const totalAmount = selectedServices.reduce((total, serviceId) => {
-              const service = services.find(s => s.id === serviceId);
-              return total + (service ? service.price : 0);
-            }, 0);
-
-            if (totalAmount > 0) {
-              const paymentData = {
-                customer: saved.id,
-                services: selectedServices,
-                branch: formData.branch,
-                amount: totalAmount,
-                payment_method: 'cash' as const,
-                notes: 'Thanh toán khi khách hàng chấp nhận dịch vụ'
-              };
-
-              await api.createPayment(paymentData);
-            }
-          }
-
-          await Swal.fire({
-            icon: 'success',
-            title: 'Thành công!',
-            text: `${editingCustomer ? 'Cập nhật' : 'Thêm'} khách hàng: ${fullName}, ${currentAppointment ? 'cập nhật' : 'tạo'} lịch hẹn và tạo thanh toán`,
-            confirmButtonText: 'OK',
-            confirmButtonColor: '#0d6efd'
-          });
-          
-          // Close dialog after successful appointment creation
+      // Close dialog after success
           handleCloseDialog();
-        } catch (appointmentErr: any) {
-          console.error('Appointment creation error:', appointmentErr);
-          
-          // Lấy thông báo lỗi cụ thể
-          let errorMessage = 'Có lỗi khi tạo lịch hẹn';
-          if (appointmentErr?.response?.data) {
-            if (typeof appointmentErr.response.data === 'string') {
-              errorMessage = appointmentErr.response.data;
-            } else if (appointmentErr.response.data.non_field_errors) {
-              errorMessage = appointmentErr.response.data.non_field_errors[0];
-            } else if (appointmentErr.response.data.detail) {
-              errorMessage = appointmentErr.response.data.detail;
-            } else {
-              // Lấy lỗi đầu tiên từ các field
-              const firstError = Object.values(appointmentErr.response.data)[0] as any;
-              if (Array.isArray(firstError)) {
-                errorMessage = String(firstError[0]);
-              } else if (typeof firstError === 'string') {
-                errorMessage = firstError;
-              } else {
-                errorMessage = String(firstError);
-              }
-            }
-          }
-          
-          await Swal.fire({
-            icon: 'error',
-            title: `Lỗi ${currentAppointment ? 'cập nhật' : 'tạo'} lịch hẹn!`,
-            html: `
-              <div class="text-start">
-                <p><strong>Khách hàng:</strong> ${fullName} đã được ${editingCustomer ? 'cập nhật' : 'tạo'} thành công</p>
-                <p><strong>Lỗi lịch hẹn:</strong> ${errorMessage}</p>
-                <p class="text-muted small mt-2">
-                  <i class="bi bi-info-circle me-1"></i>
-                  Bạn có thể ${currentAppointment ? 'cập nhật' : 'tạo'} lịch hẹn sau bằng cách chỉnh sửa khách hàng này
-                </p>
-              </div>
-            `,
-            confirmButtonText: 'OK',
-            confirmButtonColor: '#dc3545'
-          });
-          
-          // Do NOT close dialog - let user fix the appointment error
-          return;
-        }
-      } else {
-        await Swal.fire({
-          icon: 'success',
-          title: 'Thành công!',
-          text: `Đã ${editingCustomer ? 'cập nhật' : 'thêm'} khách hàng: ${fullName}. Bạn có thể tạo lịch hẹn riêng cho khách hàng này trong trang "Quản lý lịch hẹn".`,
-          confirmButtonText: 'OK',
-          confirmButtonColor: '#0d6efd'
-        });
-        
-        // Close dialog after successful customer creation/update
-        handleCloseDialog();
-      }
     } catch (err: any) {
-      // Parse error message for better display
-      let errorMessage = 'Không thể lưu thông tin khách hàng';
-      console.error('Customer creation/update error:', err);
-      
-      if (err.response?.status === 401) {
-        errorMessage = 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.';
-      } else if (err.response?.status === 500) {
-        errorMessage = 'Lỗi server. Vui lòng thử lại sau.';
-      } else if (err.response?.data) {
-        if (typeof err.response.data === 'string') {
-          errorMessage = err.response.data;
+      console.error('Error saving customer:', err);
+      let errorMessage = 'Có lỗi xảy ra khi lưu khách hàng';
+
+      if (err.response?.data) {
+        if (err.response.data.message) {
+          errorMessage = err.response.data.message;
+        } else if (err.response.data.non_field_errors) {
+          errorMessage = err.response.data.non_field_errors[0];
         } else if (err.response.data.detail) {
           errorMessage = err.response.data.detail;
-        } else if (err.response.data.non_field_errors) {
-          errorMessage = err.response.data.non_field_errors.join(', ');
-        } else if (Array.isArray(err.response.data)) {
-          errorMessage = err.response.data.join(', ');
         } else {
-          // Handle field-specific errors
-          const fieldErrors: string[] = [];
-          Object.entries(err.response.data).forEach(([field, messages]: [string, any]) => {
-            if (Array.isArray(messages)) {
-              fieldErrors.push(`${field}: ${messages.join(', ')}`);
-            } else if (typeof messages === 'string') {
-              fieldErrors.push(`${field}: ${messages}`);
-            }
-          });
-          
+          const fieldErrors = Object.values(err.response.data).flat();
           if (fieldErrors.length > 0) {
-            errorMessage = fieldErrors.join('\n');
+            errorMessage = String(fieldErrors[0]);
           }
         }
-      } else if (err?.message) {
+      } else if (err.message) {
         errorMessage = err.message;
       }
       
       setDialogError(errorMessage);
-      // Do NOT close the dialog - let user fix the error
     } finally {
       setIsSubmitting(false);
     }
@@ -966,7 +768,7 @@ const Customers: React.FC = (): JSX.Element => {
       'Chưa chỉ định';
 
     const servicesInfo = appointment.services && appointment.services.length > 0 
-      ? appointment.services.map((serviceId: number) => {
+      ? (appointment.services || []).map((serviceId: number) => {
           const service = services.find(s => s.id === serviceId);
           return service ? service.name : `ID: ${serviceId}`;
         }).join(', ')
@@ -1428,6 +1230,59 @@ const Customers: React.FC = (): JSX.Element => {
           )}
           
           <Form>
+        {/* Chế độ tạo khách hàng */}
+        {!editingCustomer && (
+          <div className="mb-4">
+            <h5 className="text-primary fw-bold mb-3">
+              <i className="bi bi-ui-checks me-2"></i>Chế độ tạo khách hàng
+            </h5>
+            <Row className="g-3 align-items-end">
+              <Col md={6}>
+                <Form.Group>
+                  <Form.Label className="fw-semibold">Chọn chế độ</Form.Label>
+                  <Form.Select
+                    value={creationMode}
+                    onChange={(e) => setCreationMode(e.target.value as 'new' | 'from_appointment')}
+                    className="enhanced-form"
+                  >
+                    <option value="new">Tạo khách hàng mới</option>
+                    <option value="from_appointment">Tạo từ lịch hẹn có sẵn</option>
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              {creationMode === 'from_appointment' && (
+                <>
+                  <Col md={4}>
+                    <Form.Group>
+                      <Form.Label className="fw-semibold">ID lịch hẹn</Form.Label>
+                      <Form.Control
+                        type="number"
+                        value={appointmentIdInput}
+                        onChange={(e) => setAppointmentIdInput(e.target.value)}
+                        placeholder="Nhập ID lịch hẹn"
+                        className="enhanced-form"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={2}>
+                    <Button
+                      variant="outline-primary"
+                      className="w-100"
+                      onClick={handleFetchAppointmentToPrefill}
+                      disabled={isFetchingAppointment || !appointmentIdInput}
+                    >
+                      {isFetchingAppointment ? (
+                        <Spinner as="span" animation="border" size="sm" />
+                      ) : (
+                        'Lấy dữ liệu'
+                      )}
+                    </Button>
+                  </Col>
+                </>
+              )}
+            </Row>
+          </div>
+        )}
             {/* Phần 1: Thông tin cá nhân */}
             <div className="mb-4">
               <h5 className="text-primary fw-bold mb-3">
@@ -1624,6 +1479,113 @@ const Customers: React.FC = (): JSX.Element => {
             </Row>
             </div>
 
+            {/* Phần 1b: Chọn dịch vụ và số lượng */}
+            <div className="mb-4">
+              <h5 className="text-primary fw-bold mb-3">
+                <i className="bi bi-bag-check me-2"></i>1b. Dịch vụ lựa chọn
+              </h5>
+              <Row className="g-3 align-items-end">
+                <Col md={8}>
+                  <Form.Group>
+                    <Form.Label className="fw-semibold">Chọn dịch vụ</Form.Label>
+                    <Select
+                      isMulti
+                      classNamePrefix="react-select"
+                      placeholder="Tìm và chọn dịch vụ..."
+                      options={(services || []).map(s => ({ value: s.id, label: `${s.name} (${formatCurrency(Number(s.price || 0))})` }))}
+                      value={selectedServices.map(id => {
+                        const s = (services || []).find(x => x.id === id);
+                        return s ? { value: s.id, label: `${s.name} (${formatCurrency(Number(s.price || 0))})` } : null;
+                      }).filter(Boolean) as any}
+                      onChange={(vals: any) => {
+                        const ids = (vals || []).map((v: any) => Number(v.value));
+                        setSelectedServices(ids);
+                        setSelectedServicesWithQuantity(prev => {
+                          const map: Record<number, number> = {};
+                          prev.forEach(p => { map[p.service_id] = p.quantity; });
+                          return ids.map((id: number) => ({ service_id: id, quantity: map[id] || 1 }));
+                        });
+                      }}
+                    />
+                  </Form.Group>
+                </Col>
+              </Row>
+
+              {selectedServicesWithQuantity.length > 0 && (
+                <div className="mt-3">
+                  <Table size="sm" className="mb-0">
+                    <thead>
+                      <tr>
+                        <th>Dịch vụ</th>
+                        <th className="text-center" style={{ width: '140px' }}>Số lượng</th>
+                        <th className="text-end" style={{ width: '140px' }}>Thành tiền</th>
+                        <th style={{ width: '48px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedServicesWithQuantity.map(item => {
+                        const service = services.find(s => s.id === item.service_id);
+                        const unitPrice = Number(service?.price || 0);
+                        const lineTotal = unitPrice * item.quantity;
+                        return (
+                          <tr key={item.service_id}>
+                            <td>{service?.name || `Dịch vụ #${item.service_id}`}</td>
+                            <td className="text-center">
+                              <div className="d-flex justify-content-center align-items-center gap-1">
+                                <Button
+                                  variant="outline-secondary"
+                                  size="sm"
+                                  onClick={() => setSelectedServicesWithQuantity(prev => prev.map(x => x.service_id === item.service_id ? { ...x, quantity: Math.max(1, x.quantity - 1) } : x))}
+                                >
+                                  -
+                                </Button>
+                                <Form.Control
+                                  type="number"
+                                  min={1}
+                                  value={item.quantity}
+                                  onChange={(e) => {
+                                    const q = Math.max(1, Number(e.target.value) || 1);
+                                    setSelectedServicesWithQuantity(prev => prev.map(x => x.service_id === item.service_id ? { ...x, quantity: q } : x));
+                                  }}
+                                  style={{ width: '64px', textAlign: 'center' }}
+                                  size="sm"
+                                />
+                                <Button
+                                  variant="outline-secondary"
+                                  size="sm"
+                                  onClick={() => setSelectedServicesWithQuantity(prev => prev.map(x => x.service_id === item.service_id ? { ...x, quantity: x.quantity + 1 } : x))}
+                                >
+                                  +
+                                </Button>
+                              </div>
+                            </td>
+                            <td className="text-end">{formatCurrency(lineTotal)}</td>
+                            <td className="text-center">
+                              <Button
+                                variant="outline-danger"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedServices(prev => prev.filter(id => id !== item.service_id));
+                                  setSelectedServicesWithQuantity(prev => prev.filter(x => x.service_id !== item.service_id));
+                                }}
+                              >
+                                <i className="bi bi-trash"></i>
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
+                  <div className="text-end mt-2">
+                    <strong>Tổng tiền: {formatCurrency(selectedServicesWithQuantity.reduce((sum, it) => {
+                      const price = Number(services.find(s => s.id === it.service_id)?.price || 0);
+                      return sum + price * it.quantity;
+                    }, 0))}</strong>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Phần 2: Thông tin đặt lịch hẹn - Đã tắt tự động tạo lịch hẹn */}
             <div className="mb-4" style={{ display: 'none' }}>
@@ -1672,7 +1634,7 @@ const Customers: React.FC = (): JSX.Element => {
                           <p className="mb-1"><strong>Dịch vụ đã chọn:</strong></p>
                           <div className="d-flex flex-wrap gap-1 mb-2" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>
                             {currentAppointment.services && currentAppointment.services.length > 0 ? (
-                              currentAppointment.services.map((serviceId: number) => {
+                              (currentAppointment.services || []).map((serviceId: number) => {
                                 const service = services.find(s => s.id === serviceId);
                                 return service ? (
                                   <span key={serviceId} className="badge bg-success" style={{ fontSize: '0.75em', maxWidth: '100%', wordBreak: 'break-word' }}>

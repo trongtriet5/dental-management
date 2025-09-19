@@ -70,6 +70,7 @@ const Appointments: React.FC = () => {
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [dateRangeError, setDateRangeError] = useState<string>('');
+  const [updatingStatusIds, setUpdatingStatusIds] = useState<Set<number>>(new Set());
   const [viewMode, setViewMode] = useState<'table' | 'calendar'>('table');
   const [calendarViewMode, setCalendarViewMode] = useState<'month' | 'week' | 'day'>('month');
   const [currentCalendarDate, setCurrentCalendarDate] = useState<Date>(new Date());
@@ -326,6 +327,7 @@ const Appointments: React.FC = () => {
 
   // Handle status change
   const handleStatusChange = async (appointmentId: number, newStatus: string) => {
+    setUpdatingStatusIds(prev => new Set(prev).add(appointmentId));
     try {
       await api.updateAppointmentStatus(appointmentId, newStatus);
       
@@ -358,6 +360,12 @@ const Appointments: React.FC = () => {
       
       // Refresh data to get correct status
       await fetchData();
+    } finally {
+      setUpdatingStatusIds(prev => {
+        const next = new Set(prev);
+        next.delete(appointmentId);
+        return next;
+      });
     }
   };
 
@@ -609,28 +617,39 @@ const Appointments: React.FC = () => {
                           </td>
                           <td>{appointment.service_names}</td>
                           <td>
-                            <Form.Select
-                              value={appointment.status}
-                              onChange={(e) => handleStatusChange(appointment.id, e.target.value)}
-                              size="sm"
-                              className="status-select"
-                              style={{ 
-                                minWidth: '120px',
-                                fontSize: '0.875rem',
-                                border: 'none',
-                                backgroundColor: `var(--bs-${getStatusVariant(appointment.status)})`,
-                                color: 'white',
-                                fontWeight: '500'
-                              }}
-                            >
-                              <option value="scheduled">Chờ xác nhận</option>
-                              <option value="confirmed">Đã xác nhận</option>
-                              <option value="arrived">Khách đã đến</option>
-                              <option value="in_progress">Đang điều trị</option>
-                              <option value="completed">Hoàn thành</option>
-                              <option value="cancelled">Đã huỷ</option>
-                              <option value="no_show">Khách không đến</option>
-                            </Form.Select>
+                            <div className="d-flex align-items-center" style={{ gap: '8px' }}>
+                              <div className="position-relative d-inline-block">
+                                <Form.Select
+                                  value={appointment.status}
+                                  onChange={(e) => handleStatusChange(appointment.id, e.target.value)}
+                                  size="sm"
+                                  className="status-select"
+                                  disabled={updatingStatusIds.has(appointment.id)}
+                                  style={{ 
+                                    minWidth: '120px',
+                                    fontSize: '0.875rem',
+                                    border: 'none',
+                                    backgroundColor: `var(--bs-${getStatusVariant(appointment.status)})`,
+                                    color: 'white',
+                                    fontWeight: '500',
+                                    opacity: updatingStatusIds.has(appointment.id) ? 0.7 : 1
+                                  }}
+                                >
+                                  <option value="scheduled">Chờ xác nhận</option>
+                                  <option value="confirmed">Đã xác nhận</option>
+                                  <option value="arrived">Khách đã đến</option>
+                                  <option value="in_progress">Đang điều trị</option>
+                                  <option value="completed">Hoàn thành</option>
+                                  <option value="cancelled">Đã huỷ</option>
+                                  <option value="no_show">Khách không đến</option>
+                                </Form.Select>
+                                {updatingStatusIds.has(appointment.id) && (
+                                  <div className="position-absolute top-50 start-50 translate-middle">
+                                    <Spinner animation="border" size="sm" />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           </td>
                           <td>
                             <Button
@@ -788,79 +807,78 @@ const Appointments: React.FC = () => {
               <Col md={12}>
                 <Form.Group>
                   <Form.Label className="fw-semibold text-primary">Dịch vụ thăm khám</Form.Label>
-                  <div className="d-flex flex-wrap gap-2">
-                    {/* Group services by category */}
-                    {(() => {
-                      // Group all services by category
-                      const servicesByCategory = services.reduce((acc, service) => {
-                        const category = service.category || 'other';
-                        if (!acc[category]) {
-                          acc[category] = [];
-                        }
-                        acc[category].push(service);
-                        return acc;
-                      }, {} as Record<string, Service[]>);
+                  {(() => {
+                    const servicesByCategory = services.reduce((acc, service) => {
+                      const category = service.category || 'other';
+                      if (!acc[category]) acc[category] = [];
+                      acc[category].push(service);
+                      return acc;
+                    }, {} as Record<string, Service[]>);
 
-                      const categoryLabels = {
-                        'implant': 'Trồng răng implant',
-                        'crown': 'Bọc răng sứ', 
-                        'orthodontic': 'Niềng răng',
-                        'other': 'Dịch vụ khác'
-                      };
+                    const categoryLabels: Record<string, string> = {
+                      implant: 'Trồng răng implant',
+                      crown: 'Bọc răng sứ',
+                      orthodontic: 'Niềng răng',
+                      other: 'Dịch vụ khác',
+                    };
 
-                      // Define the order for categories
-                      const categoryOrder = ['implant', 'crown', 'orthodontic', 'other'];
+                    const categoryOrder = ['implant', 'crown', 'orthodontic', 'other'];
 
-                      const renderServiceButtons = (serviceList: Service[]) => (
-                        <div className="d-flex flex-wrap gap-2">
-                          {serviceList.map((service) => (
-                            <Button
-                              key={service.id}
-                              variant={selectedServices.includes(service.id) ? "primary" : "outline-secondary"}
-                              size="sm"
-                              onClick={() => {
-                                if (selectedServices.includes(service.id)) {
-                                  setSelectedServices(selectedServices.filter(id => id !== service.id));
-                                } else {
-                                  setSelectedServices([...selectedServices, service.id]);
-                                }
-                              }}
-                              className="enhanced-form"
-                              style={{ 
-                                borderRadius: '20px',
-                                fontSize: '0.875rem',
-                                padding: '0.375rem 0.75rem',
-                                backgroundColor: selectedServices.includes(service.id) ? '#007bff' : 'transparent',
-                                color: selectedServices.includes(service.id) ? 'white' : '#6c757d',
-                                borderColor: selectedServices.includes(service.id) ? '#007bff' : '#6c757d',
-                                borderWidth: '1px',
-                                borderStyle: 'solid'
-                              }}
-                            >
-                              {service.name}
-                            </Button>
-                          ))}
-                        </div>
-                      );
-
-                      return (
-                        <>
-                          {/* Categories in specific order */}
-                          {categoryOrder.map((category) => {
-                            const categoryServices = servicesByCategory[category];
-                            if (!categoryServices || categoryServices.length === 0) return null;
-                            
-                            return (
-                              <div key={category} className="mb-3">
-                                <h6 className="text-muted mb-2">{categoryLabels[category as keyof typeof categoryLabels]}</h6>
-                                {renderServiceButtons(categoryServices)}
+                    return (
+                      <div className="d-flex flex-column gap-3">
+                        {categoryOrder.map((category) => {
+                          const categoryServices = servicesByCategory[category] || [];
+                          if (categoryServices.length === 0) return null;
+                          return (
+                            <div key={category}>
+                              <Form.Label className="fw-semibold text-muted mb-1">
+                                {categoryLabels[category] || category}
+                              </Form.Label>
+                              <div className="d-flex align-items-center gap-2">
+                                <Form.Select
+                                  value=""
+                                  onChange={(e) => {
+                                    const id = Number(e.target.value);
+                                    if (!id) return;
+                                    if (!selectedServices.includes(id)) {
+                                      setSelectedServices([...selectedServices, id]);
+                                    }
+                                  }}
+                                  className="enhanced-form"
+                                  style={{ maxWidth: '420px' }}
+                                >
+                                  <option value="">-- Chọn dịch vụ --</option>
+                                  {categoryServices.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.name}
+                                    </option>
+                                  ))}
+                                </Form.Select>
                               </div>
-                            );
-                          })}
-                        </>
-                      );
-                    })()}
-                  </div>
+                              <div className="mt-2 d-flex flex-wrap gap-2">
+                                {selectedServices
+                                  .map(id => services.find(s => s.id === id))
+                                  .filter((s): s is Service => Boolean(s) && (s!.category || 'other') === category)
+                                  .map((s) => (
+                                    <span key={s.id} className="badge bg-primary" style={{ fontSize: '0.8rem' }}>
+                                      {s.name}
+                                      <Button
+                                        variant="link"
+                                        size="sm"
+                                        className="p-0 ms-2 text-white text-decoration-none"
+                                        onClick={() => setSelectedServices(selectedServices.filter(x => x !== s.id))}
+                                      >
+                                        ×
+                                      </Button>
+                                    </span>
+                                  ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </Form.Group>
               </Col>
               <Col md={12}>

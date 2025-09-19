@@ -7,6 +7,12 @@ User = get_user_model()
 
 class Payment(models.Model):
     """Thanh toán"""
+    STATUS_CHOICES = [
+        ('unpaid', 'Chưa thanh toán'),
+        ('partial', 'Thanh toán một phần'),
+        ('paid', 'Đã thanh toán'),
+        ('cancelled', 'Đã hủy'),
+    ]
     PAYMENT_METHOD_CHOICES = [
         ('cash', 'Tiền mặt'),
         ('card', 'Thẻ'),
@@ -21,6 +27,7 @@ class Payment(models.Model):
     branch = models.ForeignKey(Branch, on_delete=models.CASCADE, verbose_name="Chi nhánh")
     
     amount = models.DecimalField(max_digits=10, decimal_places=0, verbose_name="Số tiền")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unpaid', verbose_name="Trạng thái")
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, 
                                     verbose_name="Phương thức thanh toán")
     notes = models.TextField(blank=True, null=True, verbose_name="Ghi chú")

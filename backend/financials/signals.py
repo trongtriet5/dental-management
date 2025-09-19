@@ -1,4 +1,4 @@
-from django.db.models.signals import post_save, m2m_changed
+from django.db.models.signals import post_save, post_delete, m2m_changed
 from django.dispatch import receiver
 from appointments.models import Appointment
 from financials.models import Payment
@@ -6,44 +6,7 @@ from customers.models import Customer
 from django.utils import timezone
 
 
-@receiver(post_save, sender=Payment)
-def auto_merge_duplicate_payments(sender, instance, created, **kwargs):
-    """Tự động gộp các Payment records trùng lặp của cùng một appointment"""
-    if created and instance.appointment:  # Chỉ chạy khi tạo Payment mới có appointment
-        try:
-            # Tìm tất cả payments của appointment này
-            payments = Payment.objects.filter(appointment=instance.appointment)
-            
-            if payments.count() > 1:
-                print(f"Tự động gộp {payments.count()} Payment records cho appointment {instance.appointment.id}")
-                
-                # Chọn Payment đầu tiên làm Payment chính
-                main_payment = payments.first()
-                
-                # Gộp tất cả services vào Payment chính
-                all_services = set()
-                total_amount = 0
-                
-                for payment in payments:
-                    all_services.update(payment.services.all())
-                    total_amount += payment.amount
-                
-                # Cập nhật Payment chính
-                main_payment.services.set(all_services)
-                main_payment.amount = total_amount
-                main_payment.save()
-                
-                # Xóa các Payment khác
-                other_payments = payments.exclude(id=main_payment.id)
-                deleted_count = other_payments.count()
-                other_payments.delete()
-                
-                print(f"✅ Đã tự động gộp {deleted_count + 1} Payment records thành Payment {main_payment.id}")
-                print(f"   - Services: {len(all_services)}")
-                print(f"   - Tổng tiền: {total_amount:,}đ")
-                
-        except Exception as e:
-            print(f"Lỗi khi tự động gộp Payment cho appointment {instance.appointment.id}: {e}")
+ 
 
 
 @receiver(m2m_changed, sender=Appointment.services.through)
@@ -53,10 +16,10 @@ def create_payment_for_appointment_services(sender, instance, action, pk_set, **
         try:
             from customers.models import Service
             
-            # Kiểm tra xem đã có Payment cho appointment này chưa
+            # Tìm Payment hiện có cho khách hàng ở cùng chi nhánh
             existing_payment = Payment.objects.filter(
-                appointment=instance,
-                customer=instance.customer
+                customer=instance.customer,
+                branch=instance.branch
             ).first()
             
             if existing_payment:
@@ -92,62 +55,36 @@ def create_payment_for_appointment_services(sender, instance, action, pk_set, **
             print(f"Lỗi tạo Payment: {e}")
 
 
-@receiver(post_save, sender=Appointment)
-def auto_merge_payments_for_appointment(sender, instance, created, **kwargs):
-    """Tự động gộp các Payment records của cùng một appointment"""
-    if not created:  # Chỉ chạy khi appointment được cập nhật, không phải tạo mới
-        try:
-            # Tìm tất cả payments của appointment này
-            payments = Payment.objects.filter(appointment=instance)
-            
-            if payments.count() > 1:
-                print(f"Tìm thấy {payments.count()} Payment records cho appointment {instance.id}, đang gộp...")
-                
-                # Chọn Payment đầu tiên làm Payment chính
-                main_payment = payments.first()
-                
-                # Gộp tất cả services vào Payment chính
-                all_services = set()
-                total_amount = 0
-                
-                for payment in payments:
-                    all_services.update(payment.services.all())
-                    total_amount += payment.amount
-                
-                # Cập nhật Payment chính
-                main_payment.services.set(all_services)
-                main_payment.amount = total_amount
-                main_payment.save()
-                
-                # Xóa các Payment khác
-                other_payments = payments.exclude(id=main_payment.id)
-                deleted_count = other_payments.count()
-                other_payments.delete()
-                
-                print(f"✅ Đã gộp {deleted_count + 1} Payment records thành Payment {main_payment.id}")
-                print(f"   - Services: {len(all_services)}")
-                print(f"   - Tổng tiền: {total_amount:,}đ")
-                
-        except Exception as e:
-            print(f"Lỗi khi tự động gộp Payment cho appointment {instance.id}: {e}")
+ 
+ 
+
+def _sync_customer_status_from_payments(customer: Customer):
+    """Đồng bộ trạng thái Customer dựa vào các Payment của họ.
+
+    Quy ước:
+    - paid => success
+    - partial/unpaid => active (nếu còn dịch vụ)
+    - cancelled và không có thanh toán khác => active
+    """
+    try:
+        payments = Payment.objects.filter(customer=customer)
+        new_status = customer.status
+        if payments.filter(status='paid').exists():
+            new_status = 'success'
+        else:
+            new_status = 'active'
+        if customer.status != new_status:
+            customer.status = new_status
+            customer.save(update_fields=['status'])
+    except Exception as e:
+        print(f"Sync customer status error: {e}")
 
 
 @receiver(post_save, sender=Payment)
-def update_customer_status_on_payment_success(sender, instance, created, **kwargs):
-    """Cập nhật trạng thái khách hàng thành 'Thành công' khi thanh toán thành công"""
-    if instance.status == 'paid' and instance.is_fully_paid:
-        try:
-            customer = instance.customer
-            if customer.status != 'success':
-                customer.status = 'success'
-                customer.save()
-                print(f"✅ Đã cập nhật trạng thái khách hàng {customer.full_name} thành 'Thành công'")
-                
-            # Cập nhật trạng thái appointment thành 'completed' nếu có
-            if instance.appointment and instance.appointment.status != 'completed':
-                instance.appointment.status = 'completed'
-                instance.appointment.save()
-                print(f"✅ Đã cập nhật trạng thái lịch hẹn {instance.appointment.id} thành 'Hoàn thành'")
-                
-        except Exception as e:
-            print(f"Lỗi cập nhật trạng thái khách hàng/appointment: {e}")
+def sync_customer_status_on_payment_save(sender, instance, created, **kwargs):
+    _sync_customer_status_from_payments(instance.customer)
+
+
+@receiver(post_delete, sender=Payment)
+def sync_customer_status_on_payment_delete(sender, instance, **kwargs):
+    _sync_customer_status_from_payments(instance.customer)
